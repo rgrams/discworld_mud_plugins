@@ -27,6 +27,9 @@ Also requires my:
 <script>
 	<![CDATA[
 
+-- Example GMCP Packet for reference:
+-- char.vitals {"alignment":"quite evil","maxhp":1900,"hp":1900,"xp":83490,"maxgp":264,"burden":13,"gp":264}
+
 require "json"
 
 local SELF_ID = GetPluginID()
@@ -201,7 +204,6 @@ local function saveSetting(name, val, nilVal)
 end
 
 function OnPluginSaveState()
-	Note("RossVitalsDisplay - saving settings")
 	-- Save window settings.
 	for k,v in pairs(winRect) do
 		saveSetting("window_" .. k, v)
@@ -230,8 +232,6 @@ function OnPluginSaveState()
 	saveSetting("stackVertically", stackVertically)
 	saveSetting("gpRegen", gpRegen)
 end
-
--- char.vitals = {"alignment":"quite evil","maxhp":1900,"hp":1900,"xp":83490,"maxgp":264,"burden":13,"gp":264}
 
 -- Drawing & Output:
 --------------------------------------------------
@@ -401,7 +401,6 @@ function onGMCPReceived(message, params)
 				local notifStat = notifSettings[stat]
 				local gain = notifStat.gainOn and notifStat.gainT or nil
 				local loss = notifStat.lossOn and notifStat.lossT or nil
-				--Note(gain)
 				if gain and diff > gain then
 					sendNotification(stat, "gain", diff)
 				elseif loss and diff < -loss then
@@ -538,29 +537,16 @@ local function generateMenu()
 end
 
 local function menuItemClicked(winID, i, prefix, item)
-	Note("menuItemClicked - i = " .. i .. ", " .. prefix .. ", " .. item)
+	--Note("menuItemClicked - i = " .. i .. ", " .. prefix .. ", " .. item)
 	local resp = menuResponses[i]
 	if resp then
 		resp[1](i, resp[2], resp[3], resp[4])
 	end
-	-- if IS_INDIV_STAT[item] then
-	-- 	window.checkMenuItem(winID, i)
-	-- 	local isEnabled = not (prefix == "+")
-	-- 	showSettings[item] = isEnabled
-	-- 	updateShowCount()
-	-- 	window.draw(winID)
-	-- elseif item == "Stack Bars Vertically" then
-	-- 	stackVertically = not stackVertically
-	-- 	window.checkMenuItem(winID, i)
-	-- 	window.draw(winID)
-	-- end
 end
 
 -- Setup - OnPluginInstall and OnPLuginEnable.
 --------------------------------------------------
 local function init()
-	--ColourNote("green", "", "Ross test plugin - subscribe to GMCP")
-
 	-- Subscribe to GMCP.
 	CallPlugin(
 		GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived",
@@ -604,31 +590,16 @@ end
 -- Teardown - OnPluginClose (uninstall) and OnPluginDisable.
 --------------------------------------------------
 local function final()
-	--ColourNote("green", "", "Ross test plugin - UNsubscribe from GMCP")
-	CallPlugin(
-		GMCP_INTERFACE_ID, "unsubscribe", SELF_ID,
-		"char.vitals", "char.info"
-	)
-	WindowDelete(winID)
-end
-
-function OnPluginInstall()
-	init()
-end
-
-function OnPluginClose() -- on Uninstall
+	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID,
+		"char.vitals", "char.info")
 	updateWinRect()
 	WindowDelete(winID)
 end
 
-function OnPluginEnable()
-	init()
-end
-
-function OnPluginDisable()
-	updateWinRect()
-	final()
-end
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final() end
 
 	]]>
 </script>
