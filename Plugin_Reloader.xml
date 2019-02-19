@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!--
+A tiny plugin for reloading other plugins by typing a command.
+==============================================================
+
+Type "reload plugin <pluginName>" to reload any other installed plugin.
+
+Is this easier than hitting CTRL-Shift-P, clicking the plugin, tab-tab-tab
+-enter? No, probably not. Except for subsequent times, when you may be able
+to just press up a few times and enter it again.
+
+-->
+<!DOCTYPE muclient>
+<muclient>
+
+<plugin
+	name="Plugin_Reloader"
+	author="Ross Grams"
+	purpose="Easily(?) reloading plugins."
+	id="cc69a4535a8549670ec82ffb"
+	language="Lua"
+	date_written="2019-02-15 13:13:35"
+	requires="5.05"
+	version="1.0"
+	>
+</plugin>
+
+<aliases>
+	<alias
+		script="reloadPlugin"
+		match="^reload plugin (.*)?$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		ignore_case="y"
+	></alias>
+</aliases>
+
+<script>
+<![CDATA[
+
+local errors = {
+	[error_code.eOK] = "Plugin reload successful.",
+	[error_code.eNoSuchPlugin] = "No plugin named '%s' is installed.",
+	[error_code.eBadParameter] = "We can't reload ourself.",
+	[error_code.ePluginFileNotFound] = "Plugin file not found",
+	[error_code.eProblemsLoadingPlugin] = "Parsing or other problem in plugin file - see error window"
+}
+
+function reloadPlugin(name, line, wildcards)
+	ColourNote("yellow", "", "Reload Plugin: " .. wildcards[1])
+	local err, msg = pcall(ReloadPlugin, wildcards[1])
+	local s = errors[msg] or ("Unknown Error: " .. tostring(msg))
+	ColourNote("yellow", "", "   " .. string.format(s, wildcards[1]))
+end
+
+]]>
+</script>
+
+</muclient>

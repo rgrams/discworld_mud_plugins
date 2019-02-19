@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<!--
+A mostly-generic GMCP handler & subscription interface for other plugins.
+=========================================================================
+
+The "Core.Supports.Set" GMCP packet names are set to all the ones the
+Discworld MUD uses. (This is the only part of the plugin that is
+actually Discworld-specific.) If you want to use it for something else,
+just modify the `supportSet` list.
+
+* Other plugins can call `subscribe(pluginID, callbackName, ...)` with any
+number of packet names, and when they are received, the named callback will
+be called, with the packet name and packet data as arguments.
+
+* Call `unsubscribe(pluginID, ...)` with any number of packet names to stop
+receiving the callback for those packets. Disabled or uninstalled plugins
+are automatically unsubscribed, so no worries.
+
+* Use the "gmcpdebug <mode> <packet>" alias to change debug settings.
+	Modes:
+		0 = off
+		1 = brief - Only prints the packet name
+		2 = verbose - Prints the full packet
+	Packet:
+		If you specify a packet name (like "char.vitals", or "room.info"),
+		then it will only print debug info for that packet. (brief or verbose)
+
+	Example: "gmcpdebug 1 char.vitals" ==> prints "char.vitals" whenever the
+	client recieves a packet with that name.
+
+	If you have debug on at all you will also get some other messages, about
+	subscription changes and so on.
+
+-->
+<muclient>
+
+<plugin
+	name="GMCP_Interface"
+	author="Ross Grams"
+	purpose="GMCP Subscription Interface."
+	id="c190b5fc9e83b05d8de996c3"
+	language="Lua"
+	save_state="y"
+	date_written="2019-02-19"
+	requires="5.05"
+	version="1.0"
+	>
+</plugin>
+
+<aliases>
+	<alias
+		script="setDebugMode"
+		match="^gmcpdebug (\d)\s*(.*)?$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+</aliases>
+
+<script>
+	<![CDATA[
+
+-- Telnet Command Codes:
+local IAC = 255 -- Interpret As Command
+local WILL = 251
+local WONT = 252
+local DO = 253
+local DONT = 254
+local SB = 250 -- Subnegotiation Begin
+local SE = 240 -- Subnegotiation End
+
+local GMCP = 201
+
+local GMCPPacketBegin = string.char(IAC, SB, GMCP)
+local GMCPPacketEnd = string.char(IAC, SE)
+
+local supportSet = {
+	"char.login", "char.info", "char.vitals",
+	"room.info", "room.map", "room.writtenmap"
+}
+local validPacketNames = {}
+for i,v in ipairs(supportSet) do  validPacketNames[v] = true  end
+
+local DEBUG_COL = "darkorange"
+local DEBUG_BG_COL = ""
+local DEBUG_ERR_COL = "white"
+local DEBUG_ERR_BG_COL = "darkred"
+local DEBUG_MODES = { [0] = "off", [1] = "brief", [2] = "verbose" }
+
+-- Utility Functions
+-- ==================================================
+local function isEmpty(t) -- Check if a table is empty.
+	assert(type(t) == "table", "isEmpty: `t` is not a table. " .. tostring(t))
+	for k,v in pairs(t) do
+		return false
+	end
+	return true
+end
+
+-- Debugging Stuff
+-- ==================================================
+
+local debugMode = tonumber(GetVariable("debugMode")) or 0
+local debugPacketName = GetVariable("debugPacketName") or nil
+
+function OnPluginSaveState()
+	SetVariable("debugMode", tostring(debugMode))
+	SetVariable("debugPacketName", tostring(debugPacketName))
+end
+
+local function debugNote(msg, isError)
+	local col = isError and DEBUG_ERR_COL or DEBUG_COL
+	local bgCol = isError and DEBUG_ERR_BG_COL or DEBUG_BG_COL
+	ColourNote(col, bgCol, msg)
+end
+
+-- Called from alias.
+function setDebugMode(name, line, wildcards)
+	local mode = tonumber(wildcards[1])
+	local packetName = wildcards[2]
+	if not mode or mode > 2 then -- Invalid mode error.
+		local errMsg = "GMCP Interface: setDebugMode - Invalid mode '" ..
+			wildcards[1] .. "'. Valid modes are: 0, 1, and 2."
+		debugNote(errMsg, true)
+		return
+	end
+
+	if packetName ~= "" and not validPacketNames[packetName] then -- Invalid packet name error.
+		debugNote("GMCP Interface: setDebugMode - Invalid packet name '" ..
+			packetName .. "'.", true)
+		packetName = ""
+	end
+
+	debugMode = mode
+	debugPacketName = packetName
+
+	local modeStr = DEBUG_MODES[mode]
+	local packetStr = ""
+	if mode ~= 0 then
+		packetStr = packetName == "" and "" or " " .. packetName
+	end
+	debugNote("GMCP set debug: ".. modeStr .. packetStr)
+end
+
+-- Subscription Stuff
+-- ==================================================
+-- Keeping track of two, keyed lists:
+--		- Messages that have subscribers. (for sending out messages)
+--		- Plugins that are subscribed to messages. (for removing disabled plugins)
+
+local subscrMessages = {}
+local subscrPlugins = {}
+
+-- Subscribe a plugin (with callback name) to one or more GMCP packet names.
+function subscribe(pluginID, callbackName, ...)
+	if debugMode > 0 then
+		debugNote("GMCP Interface: subscribe - " .. GetPluginInfo(pluginID, 17))
+	end
+	local pluginMsgs = subscrPlugins[pluginID] or {}
+	local messages = {...}
+	for i,msg in ipairs(messages) do
+		if debugMode > 0  then  debugNote("\t" .. msg)  end
+
+		if not subscrMessages[msg] then  subscrMessages[msg] = {}  end
+		subscrMessages[msg][pluginID] = callbackName
+		pluginMsgs[msg] = true
+	end
+	subscrPlugins[pluginID] = pluginMsgs -- In case it's new.
+end
+
+-- Unsubscribe a plugin from one or more GMCP packet names.
+function unsubscribe(pluginID, ...)
+	if debugMode > 0 then
+		debugNote("GMCP Interface: unsubscribe - " .. GetPluginInfo(pluginID, 17))
+	end
+	local pluginMsgs = subscrPlugins[pluginID]
+	if not pluginMsgs then  return  end
+	local messages = {...}
+	for i,msg in ipairs(messages) do
+		if debugMode > 0  then  debugNote("\t" .. msg)  end
+
+		if subscrMessages[msg] then  subscrMessages[msg][pluginID] = nil  end
+		pluginMsgs[msg] = nil
+		if isEmpty(pluginMsgs) then  subscrPlugins[pluginID] = nil  end
+	end
+end
+
+-- Plugin Tracking & Auto-Unsubscribing
+-- ==================================================
+-- Track the plugins that are currently enabled and the plugins that have
+-- subscribed so we can automatically unsubscribe them when they are
+-- uninstalled or disabled.
+
+local oldPluginList = {} -- Last list of currently-enabled plugins.
+
+function OnPluginListChanged()
+	local pluginList = GetPluginList()
+
+	-- Remove plugins that are not enabled.
+	for i=#pluginList, 1, -1 do
+		local ID = pluginList[i]
+		if not GetPluginInfo(ID, 17) then  table.remove(pluginList, i)  end
+	end
+
+	-- Check for old plugins that are now gone.
+	for i,oldID in ipairs(oldPluginList) do
+		local noLongerEnabled = true
+		for i,ID in ipairs(pluginList) do
+			if oldID == ID then
+				noLongerEnabled = false
+				break
+			end
+		end
+		if noLongerEnabled and subscrPlugins[oldID] then -- Auto-unsubscribe.
+			if debugMode > 0 then
+				debugNote("Subscribed plugin '" .. GetPluginInfo(oldID, 1) ..
+					"' disabled. Auto-unsubscribing it.")
+			end
+			local msgs = subscrPlugins[oldID]
+			local indexed = {} -- Put the messages into an indexed table so we can unpack it.
+			for msg,_ in pairs(msgs) do  table.insert(indexed, msg)  end
+			unsubscribe(oldID, unpack(indexed))
+		end
+	end
+
+	oldPluginList = pluginList
+end
+
+-- GMCP / Telnet Stuff
+-- ==================================================
+
+local function sendGMCPPacket(dataStr)
+	local packet = GMCPPacketBegin .. dataStr .. GMCPPacketEnd
+	SendPkt(packet)
+end
+
+function OnPluginTelnetRequest(code, data)
+	if code == GMCP then
+		if data == "WILL" then -- GMCP Offered.
+			return true
+		elseif data == "SENT_DO" then -- We sent acceptance of GMCP.
+			-- GMCP negotiated, now send the options that we want.
+			local hello = 'core.hello { "client" : "MUSHclient", "version" : "%s" }'
+			hello = string.format(hello, Version())
+			sendGMCPPacket(hello)
+
+			local supports = 'core.supports.set [ "%s" ]'
+			supports = string.format(supports, table.concat(supportSet, '", "'))
+			sendGMCPPacket(supports)
+			return true
+		end
+	end
+end
+
+-- Recieved telnet data packet.
+function OnPluginTelnetSubnegotiation(code, packet)
+	if code == GMCP then
+		-- Split into packet-name and packet-data.
+		local name, data = string.match(packet, "^([%a.]+)%s+(.*)$") -- (letters and periods) spaces (everything else)
+
+		if name then
+			if validPacketNames[name] then
+				if debugMode == 1 then -- Brief
+					if not debugPacket or debugPacket == name then
+						debugNote(name)
+					end
+				elseif debugMode == 2 then -- Verbose
+					if not debugPacket or debugPacket == name then
+						debugNote(packet)
+					end
+				end
+
+				if subscrMessages[name] then -- Notify any subscribers.
+					for pluginID,callbackName in pairs(subscrMessages[name]) do
+						CallPlugin(pluginID, callbackName, name, data)
+					end
+				end
+			end
+		else -- name == nil
+			debugNote("GMCP Interface - Couldn't parse GMCP packet!", true)
+			if debugMode == 1 then  debugNote(name, true)
+			elseif debugMode == 2 then  debugNote(packet, true)  end
+		end
+	end
+end
+
+	]]>
+</script>
+
+</muclient>

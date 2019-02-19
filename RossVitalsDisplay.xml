@@ -1,0 +1,636 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<!--
+
+Vitals display and notification plugin for the Discworld MUD.
+=============================================================
+
+Also requires my:
+	* RGBToInt module.
+	* window module.
+	* GMCP Interface plugin.
+
+-->
+<muclient>
+<plugin
+	name="RossVitalsDisplay"
+	author="Ross Grams"
+	id="416394bc6414e779f4b9e389"
+	language="Lua"
+	purpose="Vitals bars and notifications"
+	date_written="2019-02-14"
+	save_state="y"
+	requires="5.05"
+	version="0.1"
+	>
+</plugin>
+<script>
+	<![CDATA[
+
+require "json"
+
+local SELF_ID = GetPluginID()
+local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
+
+-- Get require path - relative path from mushclient directory.
+--------------------------------------------------
+local mushClientPath, pluginPath = GetInfo(59), GetPluginInfo(SELF_ID, 20)
+local requirePath = string.match(pluginPath, mushClientPath .. "\\(.*)\\$")
+requirePath = string.gsub(requirePath, "\\", ".")
+if string.len(requirePath) > 0 then  requirePath = requirePath .. "."  end
+--------------------------------------------------
+
+local RGBToInt = require (requirePath .. "RGBToInt")
+local window = require (requirePath .. "window")
+
+-- Utility functions.
+--------------------------------------------------
+local function copyData(d)
+	t = {}
+	for k,v in pairs(d) do  t[k] = v  end
+	return t
+end
+
+local function toboolean(str) -- Convert a value to a boolean.
+	if str == nil then  return false -- nil ==> false
+	elseif str == false or str == "false" then  return false  end -- false, or "false" ==> false
+	return true -- Anything else ==> true
+end
+
+-- Constants:
+--------------------------------------------------
+local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4}
+
+local ALL_STATS = {
+	"hp", "maxhp", "gp", "maxgp", "xp", "burden", "alignment"
+}
+local ALL_INDIV_STATS = { "hp", "gp", "xp", "burden", "alignment" }
+
+local IS_STAT = {} -- Dicts with keys matching the above for identifying things.
+local IS_INDIV_STAT = {} -- Dicts with keys matching the above for identifying things.
+for i,v in ipairs(ALL_STATS) do  IS_STAT[v] = true  end
+for i,v in ipairs(ALL_INDIV_STATS) do  IS_INDIV_STAT[v] = true  end
+
+local NOTIF_SETTING_KEYS = {}
+for i,v in ipairs(ALL_STATS) do
+	table.insert(NOTIF_SETTING_KEYS, "notify" .. v .. "Gain")
+	table.insert(NOTIF_SETTING_KEYS, "notify" .. v .. "Loss")
+end
+
+local ALIGNMENT_NUMBERS = {
+	["extremely good"] = 50,
+	["very good"] = 25,
+	["quite good"] = 12.5,
+	["good"] = 6,
+	["barely good"] = 3,
+	["neutral"] = 0,
+	["barely evil"] = -3,
+	["evil"] = -6,
+	["quite evil"] = -12.5,
+	["very evil"] = -25,
+	["extremely evil"] = -50,
+}
+
+-- Private Settings:
+--		I didn't think these needed to be in the menu options, but feel free
+--		to change them.
+--------------------------------------------------
+local labelFontSizes = { 6, 8, 10, 12, 14, 16, 18 } -- Font sizes to load. Labels are scaled in increments.
+local labelFontName = ""
+local labelAllowedFraction = 0.25 -- Fraction of the total available width that the label is allowed to take.
+local labelSizeDownFraction = 1.0 -- If the label is larger than this * allowed space, size it down.
+local labelSizeUpFraction = 0.6 -- If the label is smaller than this * allowed space, size it up.
+local labelColor = RGBToInt(255)
+local labelStatStrings = { -- To convert stat keys into text for display labels.
+	hp = "HP", gp = "GP", xp = "XP", burden = "Bu", alignment = "Al"
+}
+local longestLabelString = "HP"
+local labelHorizPadding = 4
+
+local statColors = { -- Bar fill colors.
+	hp = RGBToInt(200, 0, 0), gp = RGBToInt(90, 180, 0),
+	xp = RGBToInt(20, 50, 120), burden = RGBToInt(0, 140, 255),
+	alignment = RGBToInt(100),
+}
+
+-- Current Working Data & Settings:
+-- 	If applicable, the initial defaults are set here, but they will be
+--		saved and loaded from disk after the plugin is run the first time.
+--------------------------------------------------
+local vitals = {alignment=0,maxhp=100,hp=0,xp=0,maxgp=100,burden=0,gp=0}
+local alignStr = "neutral"
+local diffs = {}
+local winID = SELF_ID .. "VitalsDisplay"
+local winRect = {x = 500, y = 0, width = 350, height = 70}
+local labelFonts = {}
+local WIN_PADDING = 0 -- Padding between bars and edge of window
+local winBackgroundColor = RGBToInt(0, 0, 0)
+local barBackgroundColor = RGBToInt(35)
+local barFillColor = RGBToInt(225, 100, 25)
+local barBorderColor = RGBToInt(120)
+local showSettings = { -- Which stats to display.
+	hp = true, gp = true, xp = true, burden = true, alignment = true
+}
+local showCount = 0 -- Save number of stats shown so we don't have to count keys every time.
+local notifSettings = {
+	hp = {gainOn = true, gainT = 20, lossOn = false, lossT = 0},
+	maxhp = {gainOn = false, gainT = 0, lossOn = true, lossT = 0},
+	gp = {gainOn = true, gainT = 150, lossOn = true, lossT = 0},
+	maxgp = {gainOn = false, gainT = 0, lossOn = false, lossT = 0},
+	xp = {gainOn = true, gainT = 100, lossOn = false, lossT = 0},
+	burden = {gainOn = false, gainT = 0, lossOn = false, lossT = 0},
+	alignment = true,
+}
+
+-- Load saved settings.
+--------------------------------------------------
+local function updateShowCount()
+	showCount = 0
+	for k,v in pairs(showSettings) do
+		showCount = showCount + (v and 1 or 0)
+	end
+end
+
+-- Load window settings.
+for k,v in pairs(winRect) do
+	winRect[k] = tonumber(GetVariable("window_" .. k)) or v
+end
+local winLocked = toboolean(GetVariable("windowLocked"))
+local stackVertically = toboolean(GetVariable("stackVertically"))
+
+for i,stat in ipairs(ALL_STATS) do
+	-- Load show settings.
+	if stat ~= "maxhp" and stat ~= "maxgp" then
+		local v = toboolean(GetVariable("show" .. stat))
+	end
+
+	if stat == "alignment" then
+		local v = toboolean(GetVariable("notifyalignment"))
+	else
+		local g = GetVariable("notify" .. stat .. "GainEnabled")
+		if g ~= nil then  notifSettings[stat].gainOn = toboolean(g)  end
+		local gt = GetVariable("notify" .. stat .. "GainThreshold")
+		if gt ~= nil then  notifSettings[stat].gainT = tonumber(gt)  end
+
+		local l = GetVariable("notify" .. stat .. "LossEnabled")
+		if l ~= nil then  notifSettings[stat].lossOn = toboolean(l)  end
+		local lt = GetVariable("notify" .. stat .. "LossThreshold")
+		if lt ~= nil then  notifSettings[stat].lossT = tonumber(lt)  end
+	end
+end
+
+updateShowCount()
+
+local gpRegen = GetVariable("gpRegen") or 3
+
+-- Save persistent settings.
+--------------------------------------------------
+
+-- Need to make sure to do this before the window is deleted.
+-- Apparently OnPluginSaveState() happens AFTER OnPluginClose().
+local function updateWinRect()
+	for k,v in pairs(winRect) do
+		winRect[k] = WindowInfo(winID, WIN_RECT_INFO_CODES[k])
+	end
+	winLocked = window.getLocked(winID)
+end
+
+local function saveSetting(name, val, nilVal)
+	if val == nil then  val = nilVal or false  end
+	SetVariable(name, tostring(val))
+end
+
+function OnPluginSaveState()
+	Note("RossVitalsDisplay - saving settings")
+	-- Save window settings.
+	for k,v in pairs(winRect) do
+		saveSetting("window_" .. k, v)
+	end
+	saveSetting("windowLocked", winLocked)
+
+	for i,stat in ipairs(ALL_STATS) do
+		if stat ~= "maxhp" and stat ~= "maxgp" then
+			local varName = "show" .. stat
+			saveSetting(varName, showSettings[stat])
+		end
+
+		if stat == "alignment" then
+			saveSetting("notifyalignment", notifSettings[stat])
+		else
+			local gainOnVar = "notify" .. stat .. "GainEnabled"
+			local gainTVar = "notify" .. stat .. "GainThreshold"
+			local lossOnVar = "notify" .. stat .. "LossEnabled"
+			local lossTVar = "notify" .. stat .. "LossThreshold"
+			saveSetting(gainOnVar, notifSettings[stat].gainOn)
+			saveSetting(gainTVar, notifSettings[stat].gainT)
+			saveSetting(lossOnVar, notifSettings[stat].lossOn)
+			saveSetting(lossTVar, notifSettings[stat].lossT)
+		end
+	end
+	saveSetting("stackVertically", stackVertically)
+	saveSetting("gpRegen", gpRegen)
+end
+
+-- char.vitals = {"alignment":"quite evil","maxhp":1900,"hp":1900,"xp":83490,"maxgp":264,"burden":13,"gp":264}
+
+-- Drawing & Output:
+--------------------------------------------------
+local function sendNotification(text, gain_loss, diff)
+	-- Use gain_loss to figure the color.
+	Note(string.format("{%+i %s}", diff, text))
+end
+
+local function calcFontSize(text, curFont, w, h)
+	-- Find font index so we can increment it up or down.
+	local fontIndex = 1
+	for i,f in ipairs(labelFonts) do
+		if f == curFont then
+			fontIndex = i
+			break
+		end
+	end
+
+	-- Check height.
+	local font = labelFonts[fontIndex]
+	font = font or labelFonts[1] -- If nil, get smallest font.
+	local fh = font.height
+	while fh < labelSizeUpFraction * h do -- Font height is below threshold, size up.
+		if fontIndex >= #labelFonts then -- Max size font.
+			break
+		end
+		fontIndex = math.min(fontIndex + 1, #labelFonts)
+		font = labelFonts[fontIndex]
+		fh = font.height
+	end
+	while fh > labelSizeDownFraction * h do -- Font height is above threshold, size down.
+		fontIndex = math.max(fontIndex - 1, 0)
+		if fontIndex > 0 then
+			font = labelFonts[fontIndex]
+			fh = font.height
+		else
+			font, fh = nil, 0
+		end
+	end
+
+	-- Check width.
+	-- 	Font is already as big as it can be by height, so only size down.
+	local fw = 0
+	if font then
+		fw = WindowTextWidth(winID, font.id, text)
+		while fw > (labelSizeDownFraction * w - labelHorizPadding*2) do
+			fontIndex = math.max(fontIndex - 1, 0)
+			if fontIndex > 0 then
+				font = labelFonts[fontIndex]
+				fw = WindowTextWidth(winID, font.id, text)
+			else
+				font, fw = nil, 0
+			end
+		end
+	end
+	return font, fw
+end
+
+local lastFont
+
+local function draw()
+	local p = WIN_PADDING
+	local width, height = WindowInfo(winID, 3)-p*2, WindowInfo(winID, 4)-p*2
+	local i = 0
+
+	-- Calculate a uniform label font size.
+	local font = lastFont or labelFonts[math.ceil(#labelFonts/2)]
+	local textH = stackVertically and height/showCount or height
+	local textW = stackVertically and width or width/showCount
+	textW = textW * labelAllowedFraction
+	local maxLabelW = 0
+	font, maxLabelW = calcFontSize(longestLabelString, font, textW, textH)
+	lastFont = font
+
+	for _,stat in ipairs(ALL_INDIV_STATS) do
+		if showSettings[stat] then
+			-- Figure rect.
+			local x, y, w, h
+			if stackVertically then
+				x, y = p, i * height/showCount + p
+				w, h = width, height/showCount
+			else
+				x, y = i * width/showCount + p, p
+				w, h = width/showCount, height
+			end
+
+			-- Draw Label Text.
+			if font then
+				local text = labelStatStrings[stat]
+				local extraY = (h - font.height)/2
+				local ty = y + extraY -- Center label vertically.
+				local fw = maxLabelW
+				if not stackVertically then -- If stacking vertically, align the bars.
+					fw = WindowTextWidth(winID, font.id, text)
+				end
+				local xpad = x + labelHorizPadding
+				WindowText(winID, font.id, text, xpad, ty, xpad+fw, ty+h, labelColor)
+				fw = fw + labelHorizPadding * 2
+				w = w - fw;  x = x + fw
+			end
+
+			-- Draw background, border, and fill.
+			local curVal = vitals[stat]
+			local maxVal = curVal
+			if stat == "burden" then
+				maxVal = 100
+			elseif stat == "hp" or stat == "gp" then
+				maxVal = vitals["max" .. stat]
+			end
+			local fract = math.max(0, math.min(1, curVal / maxVal))
+			WindowRectOp(winID, 2, x, y, x+w, y+h, barBackgroundColor)
+			local col = statColors[stat]
+			if fract > 0 then -- Seems to be issues with drawing 0-width rects (...but only when `font == nil`???)
+				WindowRectOp(winID, 2, x, y, x+w*fract, y+h, col)
+			end
+			WindowRectOp(winID, 1, x, y, x+w, y+h, barBorderColor)
+
+			-- Draw Number Text.
+			if font then
+				local str = ""
+				if stat == "alignment" then
+					str = alignStr
+				elseif stat == "burden" then
+					str = tostring(curVal) .. " %"
+				elseif stat == "xp" then
+					str = tostring(curVal)
+				elseif stat == "hp" or stat == "gp" then
+					str = string.format("%i / %i", curVal, maxVal)
+				end
+				local fw = WindowTextWidth(winID, font.id, str)
+				local tx = x + (w - fw)/2
+				local ty = y + (h - font.height)/2
+				WindowText(winID, font.id, str, tx, ty, x+w, y+h, labelColor)
+			end
+
+			i = i + 1
+		end
+	end
+end
+
+-- GMCP Stuff:
+--------------------------------------------------
+function onGMCPReceived(message, params)
+	-- Note("RossVitalsDisplay (GMCP Received) - " .. message)
+	local data = json.decode(params)
+	alignStr = data.alignment
+	data.alignment = ALIGNMENT_NUMBERS[data.alignment]
+	if message == "char.info" then
+		vitals = nil -- New character, clear data.
+	elseif message == "char.vitals" then
+		if not vitals then -- First packet for this character.
+			vitals = copyData(data)
+		end
+		for stat,val in pairs(data) do
+			--Note(tostring(stat) .. ", " .. tostring(val))
+			-- Get diff and store.
+			local diff = val - vitals[stat]
+			diffs[stat] = val - vitals[stat]
+
+			-- Handle notifications.
+			if stat == "alignment" then
+				if diff ~= 0 then -- Alignment is a special case.
+					sendNotification(stat, diff > 0 and "gain" or "loss", diff)
+				end
+			else -- Normal stats have separate gain/loss settings.
+				-- If either notification is enabled, send it. (if the diff meets the threshold)
+				local notifStat = notifSettings[stat]
+				local gain = notifStat.gainOn and notifStat.gainT or nil
+				local loss = notifStat.lossOn and notifStat.lossT or nil
+				--Note(gain)
+				if gain and diff > gain then
+					sendNotification(stat, "gain", diff)
+				elseif loss and diff < -loss then
+					sendNotification(stat, "loss", diff)
+				end
+			end
+
+			-- Store new value.
+			vitals[stat] = val
+		end
+
+		-- Redraw display.
+		window.draw(winID)
+	end
+end
+
+-- Input Box Stuff:
+--------------------------------------------------
+local INPUT_BOX_SETTINGS = {
+	box_width = 400,
+	box_height = 200,
+	prompt_width = 350,
+	prompt_height = 50,
+	reply_width = 350,
+	reply_height = 50,
+}
+local INPUT_BOX_MSG_PREFIX = "\n	 "
+local INPUT_BOX_TITLE_PREFIX = "  "
+
+local function inputBox(msg, title, defaultText)
+	local result = utils.inputbox(
+		INPUT_BOX_MSG_PREFIX .. msg, INPUT_BOX_TITLE_PREFIX .. title,
+		defaultText or "", "Arial", 15, INPUT_BOX_SETTINGS
+	)
+	if result == "" then  result = nil  end -- Just so we can check `if result then`...
+	return result
+end
+
+-- Menu Functions:
+--------------------------------------------------
+local function setStackVert(i)
+	stackVertically = not stackVertically
+	window.checkMenuItem(winID, i)
+	window.draw(winID)
+end
+
+local function toggleShowStat(i, stat)
+	showSettings[stat] = not showSettings[stat]
+	window.checkMenuItem(winID, i)
+	updateShowCount()
+	window.draw(winID)
+end
+
+local function toggleNotifEnabled(i, stat, isGain)
+	local notifStat = notifSettings[stat]
+	if stat == "alignment" then
+		notifStat = not notifStat
+	elseif isGain then
+		notifStat.gainOn = not notifStat.gainOn
+	else
+		notifStat.lossOn = not notifStat.lossOn
+	end
+	window.checkMenuItem(winID, i)
+end
+
+local function setNotifThreshold(i, stat, isGain)
+	local gstr = isGain and "gain" or "loss"
+	local result = inputBox(
+		string.format("Enter your desired %s %s notification threshold.", stat, gstr),
+		"Set Notification Threshold", tostring(notifSettings[stat][gstr .. "T"])
+	)
+	if tonumber(result) then
+		result = math.floor(tonumber(result))
+		notifSettings[stat][gstr .. "T"] = result
+		local newMenuStr = string.format("Set %s threshold...(cur: %i)", gstr, result)
+		window.setMenuItem(winID, i, newMenuStr)
+		ColourNote("#00FF00", "", "Notification threshold set to: " .. tostring(result))
+	else
+		ColourNote("red", "", "Set Notification Threshold Failed: Input must be a number.")
+	end
+end
+
+-- Menu Handling:
+--------------------------------------------------
+local menu = {}
+local menuResponses = {}
+
+local statCount = #ALL_INDIV_STATS
+local SHOW_RANGE = {2, 2 + statCount}
+
+local function menuAdd(str, func, arg1, arg2, arg3)
+	table.insert(menu, str)
+	if func then
+		menuResponses[#menu] = {func, arg1, arg2, arg3}
+	end
+end
+
+local function generateMenu()
+	menuAdd((stackVertically and "+" or "") .. "Stack Bars Vertically",
+				setStackVert)
+
+	menuAdd(">Stats to Show:")
+	for i,stat in ipairs(ALL_INDIV_STATS) do
+		menuAdd((showSettings[stat] and "+" or "") .. stat,
+					toggleShowStat, stat)
+	end
+	menuAdd("<")
+
+	menuAdd(">Notifications:")
+	for i,stat in ipairs(ALL_STATS) do
+		menuAdd(">" .. stat)
+		if stat == "alignment" then
+			local enabled = notifSettings[stat]
+			menuAdd((enabled and "+" or "") .. "Show",
+						toggleNotifEnabled, stat)
+		else
+			local gEnabled = notifSettings[stat].gainOn
+			local gThresh = notifSettings[stat].gainT
+			menuAdd((gEnabled and "+" or "") .. "Show on gain",
+						toggleNotifEnabled, stat, true)
+			menuAdd("Set gain threshold...(cur: " .. gThresh .. ")",
+						setNotifThreshold, stat, true)
+			menuAdd("-")
+			local lEnabled = notifSettings[stat].lossOn
+			local lThresh = notifSettings[stat].lossT
+			menuAdd((lEnabled and "+" or "") .. "Show on loss",
+						toggleNotifEnabled, stat, false)
+			menuAdd("Set loss threshold...(cur: " .. lThresh .. ")",
+						setNotifThreshold, stat, false)
+		end
+		menuAdd("<") -- close stat
+	end
+	menuAdd("<") -- close notifications
+end
+
+local function menuItemClicked(winID, i, prefix, item)
+	Note("menuItemClicked - i = " .. i .. ", " .. prefix .. ", " .. item)
+	local resp = menuResponses[i]
+	if resp then
+		resp[1](i, resp[2], resp[3], resp[4])
+	end
+	-- if IS_INDIV_STAT[item] then
+	-- 	window.checkMenuItem(winID, i)
+	-- 	local isEnabled = not (prefix == "+")
+	-- 	showSettings[item] = isEnabled
+	-- 	updateShowCount()
+	-- 	window.draw(winID)
+	-- elseif item == "Stack Bars Vertically" then
+	-- 	stackVertically = not stackVertically
+	-- 	window.checkMenuItem(winID, i)
+	-- 	window.draw(winID)
+	-- end
+end
+
+-- Setup - OnPluginInstall and OnPLuginEnable.
+--------------------------------------------------
+local function init()
+	--ColourNote("green", "", "Ross test plugin - subscribe to GMCP")
+
+	-- Subscribe to GMCP.
+	CallPlugin(
+		GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived",
+		"char.vitals", "char.info"
+	)
+
+	-- Create Window.
+	window.new(
+		winID, winRect.x, winRect.y, winRect.width, winRect.height,
+		nil, nil, winBackgroundColor, -- align, flags, bgColor
+		true, winLocked, menuItemClicked, draw -- visible, locked, menuCb, drawCb
+	)
+
+	-- Add menu items.
+	generateMenu()
+	window.addMenuItems(winID, nil, menu)
+
+	-- Load Fonts for Window.
+	for i,size in ipairs(labelFontSizes) do
+		local fontID = tostring(size)
+		WindowFont(winID, fontID, labelFontName, size)
+		local fh = WindowFontInfo(winID, fontID, 1)
+		local avgCharW = WindowFontInfo(winID, fontID, 6)
+		table.insert(labelFonts, {id = fontID, height = fh, avgCharW = avgCharW})
+	end
+	-- Get the longest label string for calculating uniform label font size.
+	local fontID = labelFonts[1].id -- Just use first size to test. (shouldn't matter)
+	local maxW = 0
+	for stat,labelString in pairs(labelStatStrings) do
+		local fw = WindowTextWidth(winID, fontID, labelString)
+		if fw > maxW then
+			maxW = fw
+			longestLabelString = labelString
+		end
+	end
+
+	-- Draw Window.
+	draw()
+end
+
+-- Teardown - OnPluginClose (uninstall) and OnPluginDisable.
+--------------------------------------------------
+local function final()
+	--ColourNote("green", "", "Ross test plugin - UNsubscribe from GMCP")
+	CallPlugin(
+		GMCP_INTERFACE_ID, "unsubscribe", SELF_ID,
+		"char.vitals", "char.info"
+	)
+	WindowDelete(winID)
+end
+
+function OnPluginInstall()
+	init()
+end
+
+function OnPluginClose() -- on Uninstall
+	updateWinRect()
+	WindowDelete(winID)
+end
+
+function OnPluginEnable()
+	init()
+end
+
+function OnPluginDisable()
+	updateWinRect()
+	final()
+end
+
+	]]>
+</script>
+
+</muclient>
