@@ -78,6 +78,8 @@ local handleAxis = {
 	ltBot = {x=-1, y=1}, rtBot = {x=1, y=1},
 }
 
+local SIDE_NORMAL_DIR = {lt = -1, rt = 1, top = -1, bot = 1}
+
 -- Some function upvalues:
 local setZ
 
@@ -260,7 +262,10 @@ local function getSnap(a, axis)
 		end
 	end
 	if minDist < snapDist then
-		return minIndex
+		return minIndex, minDist
+	else
+		-- Always return a minDist number, but first arg is nil if it's not in range.
+		return nil, minDist
 	end
 end
 
@@ -289,16 +294,59 @@ function mouseDown(flags, hotspotID)
 	if not winData[winID].locked then
 		winData[winID].dragOX = WindowInfo(winID, 14)
 		winData[winID].dragOY = WindowInfo(winID, 15)
+
+		updateSnapList()
 	end
 end
 
+local _dragSnapDistance = { -- Reuse the same table.
+	lt = 0, rt = 0, top = 0, bot = 0,
+}
+
 function mouseDrag(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	if not winData[winID].locked then
-		local ox, oy = winData[winID].dragOX, winData[winID].dragOY
-		local mx = WindowInfo(winID, 17)
-		local my = WindowInfo(winID, 18)
-		WindowPosition(winID, mx - ox, my - oy, 0, winData[winID].flags)
+	local data = winData[winID]
+	if not data.locked then
+		local mouseX = WindowInfo(winID, 17)
+		local mouseY = WindowInfo(winID, 18)
+
+		-- Get current window rect.
+		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
+		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
+		local rt, bot = lt + w, top + h
+
+		local dx = (mouseX - data.dragOX) - lt
+		local dy = (mouseY - data.dragOY) - top
+
+		-- Move all edge positions by dx, dy.
+		lt, rt = lt + dx, rt + dx
+		top, bot = top + dy, bot + dy
+
+		-- Figure snapping.
+		if not (bit.test(flags, snapModifierCode)) then
+			local snapD = _dragSnapDistance
+			-- Get snap for each new edge pos.
+			local _
+			_, snapD.lt = getSnap(lt, "x") -- `val` can be nil, `dist` is always a number.
+			_, snapD.rt = getSnap(rt, "x") -- Not actually using the value.
+			_, snapD.top = getSnap(top, "y")
+			_, snapD.bot = getSnap(bot, "y")
+
+			-- For each axis, get the closer snap, or nil if neither are in range.
+			snapX = "lt"
+			if snapD.rt < snapD.lt then  snapX = "rt"  end
+			if snapD[snapX] > snapDist then  snapX = nil  end
+
+			snapY = "top"
+			if snapD.bot < snapD.top then  snapY = "bot"  end
+			if snapD[snapY] > snapDist then  snapY = nil  end
+
+			-- Add in the extra snap distance.
+			if snapX then  lt = lt + snapD[snapX] * SIDE_NORMAL_DIR[snapX]  end
+			if snapY then  top = top + snapD[snapY] * SIDE_NORMAL_DIR[snapY]  end
+		end
+
+		WindowPosition(winID, lt, top, 0, winData[winID].flags)
 	end
 end
 
@@ -330,8 +378,6 @@ function mouseUnhoverHandle(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
 	local data = winData[winID]
 	if data.hoveredHandle then
-		local w = WindowInfo(winID, 3)
-		local h = WindowInfo(winID, 4)
 		data.hoveredHandle = nil
 		draw(winID)
 	end
@@ -340,24 +386,26 @@ end
 function mouseDownHandle(flags, hotspotID)
 	local winID, handleName = winIDFromHotspotID(hotspotID)
 	local data = winData[winID]
-	-- Get mouse pos.
-	local mouseX = WindowInfo(winID, 17)
-	local mouseY = WindowInfo(winID, 18)
+	if not data.locked then
+		-- Get mouse pos.
+		local mouseX = WindowInfo(winID, 17)
+		local mouseY = WindowInfo(winID, 18)
 
-	-- Get current window rect.
-	local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-	local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
-	local rt, bot = lt + w, top + h
+		-- Get current window rect.
+		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
+		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
+		local rt, bot = lt + w, top + h
 
-	-- Save mouse offset relative to moving edges.
-	data.dragOX, data.dragOY = 0, 0
-	local ax, ay = handleAxis[handleName].x, handleAxis[handleName].y
-	if ax == 1 then  data.dragOX = rt - mouseX
-	elseif ax == -1 then  data.dragOX = lt - mouseX  end
-	if ay == 1 then  data.dragOY = bot - mouseY
-	elseif ay == -1 then  data.dragOY = top - mouseY  end
+		-- Save mouse offset relative to moving edges.
+		data.dragOX, data.dragOY = 0, 0
+		local ax, ay = handleAxis[handleName].x, handleAxis[handleName].y
+		if ax == 1 then  data.dragOX = rt - mouseX
+		elseif ax == -1 then  data.dragOX = lt - mouseX  end
+		if ay == 1 then  data.dragOY = bot - mouseY
+		elseif ay == -1 then  data.dragOY = top - mouseY  end
 
-	updateSnapList()
+		updateSnapList()
+	end
 end
 
 function mouseCancelDownHandle(flags, hotspotID)
