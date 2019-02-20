@@ -20,7 +20,7 @@ A status bar display for some or all of your character's "vital" stats (Hp, Gp, 
    * Separate toggles and thresholds for the gain and loss of each stat.
 
 
-Also see the `window` module below for the features of the display window. (It can be moved around and resized and all that jazz.)
+Also see the `window` module below for the features of the display window. (It can be moved around and resized and such.)
 
 #### Dependencies:
 * GMCP Interface Plugin
@@ -35,7 +35,8 @@ A mostly-generic GMCP handler & subscription interface for other plugins. It ena
 
 * Use the "gmcpdebug <mode> <packetNameFilter>" command to debug on the fly.
 * Other plugins call "subscribe" with their plugin ID and a callback name to get GMCP packets.
-* Other plugins can call "unsubscribe" whenever they want, or, if they are disabled or removed, they will be automatically unsubscribed.
+* Other plugins can call "unsubscribe" to stop recieving certain packets
+   * If a subscribed plugin is disabled or removed, it will be automatically unsubscribed.
 
 ## Plugin Reloader
 A tiny plugin for reloading other plugins by typing a command.
