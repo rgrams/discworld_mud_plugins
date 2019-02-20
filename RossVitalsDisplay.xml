@@ -165,6 +165,7 @@ for i,stat in ipairs(ALL_STATS) do
 	-- Load show settings.
 	if stat ~= "maxhp" and stat ~= "maxgp" then
 		local v = toboolean(GetVariable("show" .. stat))
+		if v ~= nil then  showSettings[stat] = v  end
 	end
 
 	if stat == "alignment" then
