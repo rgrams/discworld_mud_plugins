@@ -241,6 +241,8 @@ local function sendNotification(text, gain_loss, diff)
 end
 
 local function calcFontSize(text, curFont, w, h)
+	local count = 0
+
 	-- Find font index so we can increment it up or down.
 	local fontIndex = 1
 	for i,f in ipairs(labelFonts) do
@@ -255,6 +257,7 @@ local function calcFontSize(text, curFont, w, h)
 	font = font or labelFonts[1] -- If nil, get smallest font.
 	local fh = font.height
 	while fh < labelSizeUpFraction * h do -- Font height is below threshold, size up.
+		count = count + 1;  if count > 50 then  break  end
 		if fontIndex >= #labelFonts then -- Max size font.
 			break
 		end
@@ -263,27 +266,29 @@ local function calcFontSize(text, curFont, w, h)
 		fh = font.height
 	end
 	while fh > labelSizeDownFraction * h do -- Font height is above threshold, size down.
+		count = count + 1;  if count > 50 then  break  end
 		fontIndex = math.max(fontIndex - 1, 0)
 		if fontIndex > 0 then
 			font = labelFonts[fontIndex]
 			fh = font.height
 		else
-			font, fh = nil, 0
+			font, fh = nil, -math.huge
 		end
 	end
 
 	-- Check width.
 	-- 	Font is already as big as it can be by height, so only size down.
-	local fw = 0
+	local fw = -math.huge
 	if font then
 		fw = WindowTextWidth(winID, font.id, text)
 		while fw > (labelSizeDownFraction * w - labelHorizPadding*2) do
+			count = count + 1;  if count > 50 then  break  end
 			fontIndex = math.max(fontIndex - 1, 0)
 			if fontIndex > 0 then
 				font = labelFonts[fontIndex]
 				fw = WindowTextWidth(winID, font.id, text)
 			else
-				font, fw = nil, 0
+				font, fw = nil, -math.huge
 			end
 		end
 	end
