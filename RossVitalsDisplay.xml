@@ -128,6 +128,10 @@ local notifBracketColor = RGBToInt(190)
 --		saved and loaded from disk after the plugin is run the first time.
 --------------------------------------------------
 local vitals = {alignment=0,maxhp=100,hp=0,xp=0,maxgp=100,burden=0,gp=0}
+local gpRegen = 3
+local hpRegen = 4
+local heartTimer = "heartbeat"
+local heartTimerFlags = 1 + 1024 + 16384 -- enabled, replace (just in case), and temporary? ("don't save to world file"?)
 local alignStr = "neutral"
 local diffs = {}
 local winID = SELF_ID .. "VitalsDisplay"
@@ -143,9 +147,9 @@ local showSettings = { -- Which stats to display.
 }
 local showCount = 0 -- Save number of stats shown so we don't have to count keys every time.
 local notifSettings = {
-	hp = {gainOn = true, gainT = 20, lossOn = false, lossT = 0},
+	hp = {gainOn = true, gainT = 20, lossOn = false, lossT = 5},
 	maxhp = {gainOn = false, gainT = 0, lossOn = true, lossT = 0},
-	gp = {gainOn = true, gainT = 150, lossOn = true, lossT = 0},
+	gp = {gainOn = true, gainT = 150, lossOn = true, lossT = 4},
 	maxgp = {gainOn = false, gainT = 0, lossOn = false, lossT = 0},
 	xp = {gainOn = true, gainT = 100, lossOn = false, lossT = 0},
 	burden = {gainOn = false, gainT = 0, lossOn = false, lossT = 0},
@@ -192,7 +196,9 @@ end
 
 updateShowCount()
 
-local gpRegen = GetVariable("gpRegen") or 3
+-- Load regen rates.
+gpRegen = tonumber(GetVariable("gpRegen")) or gpRegen
+hpRegen = tonumber(GetVariable("hpRegen")) or hpRegen
 
 -- Save persistent settings.
 --------------------------------------------------
@@ -389,24 +395,24 @@ local function draw()
 	end
 end
 
--- GMCP Stuff:
+-- Update:
 --------------------------------------------------
-function onGMCPReceived(message, params)
-	-- Note("RossVitalsDisplay (GMCP Received) - " .. message)
-	local data = json.decode(params)
-	alignStr = data.alignment
-	data.alignment = ALIGNMENT_NUMBERS[data.alignment]
-	if message == "char.info" then
-		vitals = nil -- New character, clear data.
-	elseif message == "char.vitals" then
-		if not vitals then -- First packet for this character.
-			vitals = copyData(data)
-		end
-		for stat,val in pairs(data) do
-			--Note(tostring(stat) .. ", " .. tostring(val))
+
+-- Update with new vitals data.
+-- Data table can have any number of valid stat keys.
+local function updateVitals(newVitals)
+	if type(newVitals.alignment) == "string" then
+		alignStr = newVitals.alignment
+		newVitals.alignment = ALIGNMENT_NUMBERS[newVitals.alignment]
+	end
+	local needRedraw = false
+	for stat,val in pairs(newVitals) do
+		if IS_STAT[stat] then
 			-- Get diff and store.
 			local diff = val - vitals[stat]
 			diffs[stat] = val - vitals[stat]
+
+			if diff ~= 0 then  needRedraw = true  end
 
 			-- Handle notifications.
 			if stat == "alignment" then
@@ -429,9 +435,40 @@ function onGMCPReceived(message, params)
 			vitals[stat] = val
 		end
 
-		-- Redraw display.
-		window.draw(winID)
 	end
+	-- Redraw display if anything has changed.
+	if needRedraw then  window.draw(winID)  end
+end
+
+-- GMCP Stuff:
+--------------------------------------------------
+function onGMCPReceived(message, params)
+	local data = json.decode(params)
+	if message == "char.info" then
+		vitals = nil -- New character, clear data.
+	elseif message == "char.vitals" then
+		if not vitals then -- First packet for this character.
+			vitals = copyData(data)
+		end
+		updateVitals(data)
+	end
+end
+
+-- Heartbeat Timer:
+--------------------------------------------------
+function heartbeatTick(timerName)
+	local needUpdate = false
+	local newVitals
+	if vitals.gp < vitals.maxgp and gpRegen > 0 then
+		needUpdate = true
+		newVitals = {gp = math.min(vitals.maxgp, vitals.gp + gpRegen)}
+	end
+	if vitals.hp < vitals.maxhp and hpRegen > 0 then
+		needUpdate = true
+		newVitals = newVitals or {}
+		newVitals.hp = math.min(vitals.maxhp, vitals.hp + hpRegen)
+	end
+	if needUpdate then  updateVitals(newVitals)  end
 end
 
 -- Input Box Stuff:
@@ -602,6 +639,9 @@ local function init()
 
 	-- Draw Window.
 	draw()
+
+	-- Start Heartbeat Timer.
+	AddTimer(heartTimer, 0, 0, 2, "", heartTimerFlags, "heartbeatTick")
 end
 
 -- Teardown - OnPluginClose (uninstall) and OnPluginDisable.
@@ -611,6 +651,7 @@ local function final()
 		"char.vitals", "char.info")
 	updateWinRect()
 	WindowDelete(winID)
+	DeleteTimer(heartTimer)
 end
 
 function OnPluginInstall()  init()  end
