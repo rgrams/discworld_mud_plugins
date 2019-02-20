@@ -94,6 +94,9 @@ local ALIGNMENT_NUMBERS = {
 	["extremely evil"] = -50,
 }
 
+local MAX_HP_REGEN = 6
+local MAX_GP_REGEN = 5
+
 -- Private Settings:
 --		I didn't think these needed to be in the menu options, but feel free
 --		to change them.
@@ -434,7 +437,6 @@ local function updateVitals(newVitals)
 			-- Store new value.
 			vitals[stat] = val
 		end
-
 	end
 	-- Redraw display if anything has changed.
 	if needRedraw then  window.draw(winID)  end
@@ -495,6 +497,8 @@ end
 
 -- Menu Functions:
 --------------------------------------------------
+ -- These will always get the local full-menu index as the first arg.
+
 local function setStackVert(i)
 	stackVertically = not stackVertically
 	window.checkMenuItem(winID, i)
@@ -537,6 +541,23 @@ local function setNotifThreshold(i, stat, isGain)
 	end
 end
 
+local function setRegenRate(i, stat, rate)
+	local lastRate = 3
+	if stat == "HP" then
+		lastRate = hpRegen
+		hpRegen = rate
+	elseif stat == "GP" then
+		lastRate = gpRegen
+		gpRegen = rate
+	end
+	window.checkMenuItem(winID, i, true) -- Check chose menu item.
+
+	-- Un-check last item - find it based on the difference in rates.
+	local diff = rate - lastRate
+	i = i - diff
+	window.checkMenuItem(winID, i, false)
+end
+
 -- Menu Handling:
 --------------------------------------------------
 local menu = {}
@@ -556,6 +577,7 @@ local function generateMenu()
 	menuAdd((stackVertically and "+" or "") .. "Stack Bars Vertically",
 				setStackVert)
 
+	-- Show stats submenu.
 	menuAdd(">Stats to Show:")
 	for i,stat in ipairs(ALL_INDIV_STATS) do
 		menuAdd((showSettings[stat] and "+" or "") .. stat,
@@ -563,6 +585,7 @@ local function generateMenu()
 	end
 	menuAdd("<")
 
+	-- Notifications submenus.
 	menuAdd(">Notifications:")
 	for i,stat in ipairs(ALL_STATS) do
 		menuAdd(">" .. stat)
@@ -588,13 +611,27 @@ local function generateMenu()
 		menuAdd("<") -- close stat
 	end
 	menuAdd("<") -- close notifications
+
+	-- Regen rate submenus.
+	for i=1, 2 do
+		local stat = i == 1 and "HP" or "GP"
+		menuAdd(">" .. stat .. " Regen Rate:")
+		local curRate = i == 1 and hpRegen or gpRegen
+		local maxRate = i == 1 and MAX_HP_REGEN or MAX_GP_REGEN
+		for rate=0, maxRate do
+			local str = tostring(rate)
+			if rate == curRate then  str = "+" .. str  end
+			menuAdd(str, setRegenRate, stat, rate)
+		end
+		menuAdd("<") -- close submenu
+	end
 end
 
 local function menuItemClicked(winID, i, prefix, item)
 	--Note("menuItemClicked - i = " .. i .. ", " .. prefix .. ", " .. item)
 	local resp = menuResponses[i]
 	if resp then
-		resp[1](i, resp[2], resp[3], resp[4])
+		resp[1](i, resp[2], resp[3], resp[4]) -- Always sends local full-menu index as first arg.
 	end
 end
 
