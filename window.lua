@@ -225,6 +225,45 @@ end
 -- Snapping:
 --------------------------------------------------
 
+local snapList = { x = {}, y = {} }
+local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4}
+local snapDist = 5
+
+-- Make a list of positions for each axis where window edges are.
+local function updateSnapList()
+	snapList = { x = {}, y = {} } -- Recreate old snap list entirely.
+	local winList = WindowList()
+	for i,winID in ipairs(winList) do
+		local visible = WindowInfo(winID, 5) and not WindowInfo(winID, 6) -- window show flag and not hidden.
+		if visible then
+			local rect = {}
+			for k,code in pairs(WIN_RECT_INFO_CODES) do
+				rect[k] = WindowInfo(winID, code)
+			end
+			local x2, y2 = rect.x + rect.width, rect.y + rect.height
+			if not snapList.x[rect.x] then  snapList.x[rect.x] = true  end
+			if not snapList.x[x2] then  snapList.x[x2] = true  end
+			if not snapList.y[rect.y] then  snapList.y[rect.y] = true  end
+			if not snapList.y[y2] then  snapList.y[y2] = true  end
+		end
+	end
+end
+
+-- Gets the closest coordinate to snap to, or nil if none is within 'snapDist'.
+local function getSnap(a, axis)
+	local list = snapList[axis]
+	local minDist, minIndex = math.huge, nil
+	for i,_ in pairs(list) do
+		local d = math.abs(a - i)
+		if d < minDist then
+			minDist = d
+			minIndex = i
+		end
+	end
+	if minDist < snapDist then
+		return minIndex
+	end
+end
 
 -- Main Hotspot Callbacks:
 --------------------------------------------------
@@ -304,6 +343,8 @@ function mouseDownHandle(flags, hotspotID)
 	-- Save mouse offset.
 	winData[winID].dragOX = WindowInfo(winID, 17)
 	winData[winID].dragOY = WindowInfo(winID, 18)
+
+	updateSnapList()
 end
 
 function mouseCancelDownHandle(flags, hotspotID)
