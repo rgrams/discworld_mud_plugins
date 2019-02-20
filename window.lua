@@ -28,6 +28,24 @@ local function makeHotspotID(winID, hotspotName)
 	return winID .. hotspotIdSeparator .. hotspotName
 end
 
+-- Input Box Stuff:
+--------------------------------------------------
+local INPUT_BOX_SETTINGS = {
+	box_width = 400, box_height = 200,
+	prompt_width = 350, prompt_height = 50,
+	reply_width = 350, reply_height = 50,
+}
+local INPUT_BOX_MSG_PREFIX = "\n	 ";  local INPUT_BOX_TITLE_PREFIX = "  "
+
+local function inputBox(msg, title, defaultText)
+	local result = utils.inputbox(
+		INPUT_BOX_MSG_PREFIX .. msg, INPUT_BOX_TITLE_PREFIX .. title,
+		defaultText or "", "Arial", 15, INPUT_BOX_SETTINGS
+	)
+	if result == "" then  result = nil  end -- Just so we can check `if result then`...
+	return result
+end
+
 -- Handle Data & Utility:
 --------------------------------------------------
 local handleHotspotSpecs = {
@@ -60,10 +78,20 @@ local handleAxis = {
 	leftBottom = {x=-1, y=1}, rightBottom = {x=1, y=1},
 }
 
+-- Some function upvalues:
+local setZ
+
 -- Menu:
 --------------------------------------------------
-local baseMenu = { "Lock Window Position and Size", "-" }
+local baseMenu = {
+	"Lock Window Position and Size",
+	">Window Draw Order", "Move Up", "Move Down", "Set...", "<",
+	"-",
+}
 local menuPrefix = "!"
+local menuActiveI_Lock = 1
+local menuActiveI_ZUp, menuActiveI_ZDown, menuActiveI_ZSet = 2, 3, 4
+local menuFullI_ZSet = 5
 
 local function makeBaseMenu()
 	local m = {}
@@ -120,14 +148,27 @@ local function menuResultHandler(winID, i)
 	local prefix, item = sanitizeMenuResult(r)
 	if r == "" then
 		return
-	elseif item == baseMenu[1] then
-		-- Toggle the window lock.
+	elseif i == menuActiveI_Lock then
 		data.locked = not data.locked
 		-- Toggle the check on the menu item.
 		local newPrefix = prefix == "+" and "" or "+"
 		data.menu[1] = newPrefix .. item
 		updateMenuString(winID)
 		updateMenuActiveItems(winID)
+	elseif i == menuActiveI_ZUp then -- Draw-Order Up.
+		setZ(winID, 1, true)
+	elseif i == menuActiveI_ZDown then -- Draw-Order Down.
+		setZ(winID, -1, true)
+	elseif i == menuActiveI_ZSet then
+		local z = WindowInfo(winID, 22)
+		z = inputBox("Enter your desired Z-Order:", "window.setZ", tostring(z))
+		if tonumber(z) then
+			z = math.floor(tonumber(z))
+			ColourNote("#00FF00", "", "Window Z-Order set to: " .. tostring(z))
+			setZ(winID, z)
+		else
+			ColourNote("red", "", "Set Z-Order Failed: Input must be a number.")
+		end
 	else
 		-- Call owner's menu result handler (if any).
 		-- NOTE: i = index for active items only.
@@ -137,6 +178,24 @@ local function menuResultHandler(winID, i)
 			if data.menuCb then  data.menuCb(winID, i, prefix, item)  end
 		end
 	end
+end
+
+-- Private Window Manipulation Functions:
+--------------------------------------------------
+-- is local, upvalue set above.
+function setZ(winID, z, relative)
+	-- Set Z-Order.
+	if relative then  z = WindowInfo(winID, 22) + z  end
+	WindowSetZOrder(winID, z)
+
+	-- Update menu item.
+	local menu = winData[winID].menu
+	local s = string.format("Set...(cur: %i)", z)
+	menu[menuFullI_ZSet] = s
+	updateMenuString(winID)
+	updateMenuActiveItems(winID)
+
+	WindowShow(winID, true)
 end
 
 -- Drawing:
@@ -304,7 +363,7 @@ end
 
 -- Public functions:
 --------------------------------------------------
-function M.new(id, left, top, width, height, align, flags, bgColor, visible, locked, menuCb, drawCb)
+function M.new(id, left, top, width, height, z, align, flags, bgColor, visible, locked, menuCb, drawCb)
 	align = align or 5
 	flags = flags or 2
 	bgColor = bgColor or RGBToInt()
@@ -322,6 +381,8 @@ function M.new(id, left, top, width, height, align, flags, bgColor, visible, loc
 	WindowCreate(id, left, top, width, height, align, flags, bgColor)
 	if visible then  WindowShow(id, true)  end
 	WindowRectOp(id, 1, 0, 0, width, height, normalBorderColor) -- Draw 1 pixel border.
+
+	setZ(id, z)
 
 	local mainHotspotID = makeHotspotID(id, "main")
 	WindowAddHotspot(

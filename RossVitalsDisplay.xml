@@ -62,7 +62,7 @@ end
 
 -- Constants:
 --------------------------------------------------
-local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4}
+local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4, z = 22}
 
 local ALL_STATS = {
 	"hp", "maxhp", "gp", "maxgp", "xp", "burden", "alignment"
@@ -124,7 +124,7 @@ local vitals = {alignment=0,maxhp=100,hp=0,xp=0,maxgp=100,burden=0,gp=0}
 local alignStr = "neutral"
 local diffs = {}
 local winID = SELF_ID .. "VitalsDisplay"
-local winRect = {x = 500, y = 0, width = 350, height = 70}
+local winRect = {x = 500, y = 0, width = 350, height = 70, z = 0}
 local labelFonts = {}
 local WIN_PADDING = 0 -- Padding between bars and edge of window
 local winBackgroundColor = RGBToInt(0, 0, 0)
@@ -555,7 +555,7 @@ local function init()
 
 	-- Create Window.
 	window.new(
-		winID, winRect.x, winRect.y, winRect.width, winRect.height,
+		winID, winRect.x, winRect.y, winRect.width, winRect.height, winRect.z,
 		nil, nil, winBackgroundColor, -- align, flags, bgColor
 		true, winLocked, menuItemClicked, draw -- visible, locked, menuCb, drawCb
 	)
