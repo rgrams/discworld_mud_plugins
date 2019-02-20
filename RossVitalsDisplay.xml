@@ -100,15 +100,15 @@ local ALIGNMENT_NUMBERS = {
 --------------------------------------------------
 local labelFontSizes = { 6, 8, 10, 12, 14, 16, 18 } -- Font sizes to load. Labels are scaled in increments.
 local labelFontName = ""
-local labelAllowedFraction = 0.25 -- Fraction of the total available width that the label is allowed to take.
-local labelSizeDownFraction = 1.0 -- If the label is larger than this * allowed space, size it down.
-local labelSizeUpFraction = 0.6 -- If the label is smaller than this * allowed space, size it up.
+local labelAllowedFraction = 0.35 -- Fraction of the total available width that the label is allowed to take.
+local labelSizeDownFraction = 0.9 -- If the label is larger than this * allowed space, size it down.
+local labelSizeUpFraction = 0.7 -- If the label is smaller than this * allowed space, size it up.
 local labelColor = RGBToInt(255)
 local labelStatStrings = { -- To convert stat keys into text for display labels.
 	hp = "HP", gp = "GP", xp = "XP", burden = "Bu", alignment = "Al"
 }
 local longestLabelString = "HP"
-local labelHorizPadding = 4
+local labelHorizPadding = 2
 
 local statColors = { -- Bar fill colors.
 	hp = RGBToInt(200, 0, 0), gp = RGBToInt(90, 180, 0),
@@ -133,7 +133,7 @@ local diffs = {}
 local winID = SELF_ID .. "VitalsDisplay"
 local winRect = {x = 500, y = 0, width = 350, height = 70, z = 0}
 local labelFonts = {}
-local WIN_PADDING = 0 -- Padding between bars and edge of window
+local WIN_PADDING = 2 -- Padding between bars and edge of window
 local winBackgroundColor = RGBToInt(0, 0, 0)
 local barBackgroundColor = RGBToInt(35)
 local barFillColor = RGBToInt(225, 100, 25)
