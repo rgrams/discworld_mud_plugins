@@ -49,19 +49,19 @@ end
 -- Handle Data & Utility:
 --------------------------------------------------
 local handleHotspotSpecs = {
-	left = { lt = {0, 0}, top = {1, 0}, rt = {1, 0}, bot = {-1, 1} }, -- { multiplier for edgeWidth, multiplier for width/height }
-	right = { lt = {-1, 1}, top = {1, 0}, rt = {0, 1}, bot = {-1, 1} },
+	lt = { lt = {0, 0}, top = {1, 0}, rt = {1, 0}, bot = {-1, 1} }, -- { multiplier for edgeWidth, multiplier for width/height }
+	rt = { lt = {-1, 1}, top = {1, 0}, rt = {0, 1}, bot = {-1, 1} },
 	top = { lt = {1, 0}, top = {0, 0}, rt = {-1, 1}, bot = {1, 0} },
 	bot = { lt = {1, 0}, top = {-1, 1}, rt = {-1, 1}, bot = {0, 1} },
-	leftTop = { lt = {0, 0}, top = {0, 0}, rt = {1, 0}, bot = {1, 0} },
-	rightTop = { lt = {-1, 1}, top = {0, 0}, rt = {0, 1}, bot = {1, 0} },
-	leftBottom = { lt = {0, 0}, top = {-1, 1}, rt = {1, 0}, bot = {0, 1} },
-	rightBottom = { lt = {-1, 1}, top = {-1, 1}, rt = {0, 1}, bot = {0, 1} },
+	ltTop = { lt = {0, 0}, top = {0, 0}, rt = {1, 0}, bot = {1, 0} },
+	rtTop = { lt = {-1, 1}, top = {0, 0}, rt = {0, 1}, bot = {1, 0} },
+	ltBot = { lt = {0, 0}, top = {-1, 1}, rt = {1, 0}, bot = {0, 1} },
+	rtBot = { lt = {-1, 1}, top = {-1, 1}, rt = {0, 1}, bot = {0, 1} },
 }
 
 local handleCursors = {
-	left = 8, right = 8, top = 9, bot = 9,
-	leftTop = 6, rightBottom = 6, rightTop = 7, leftBottom = 7
+	lt = 8, rt = 8, top = 9, bot = 9,
+	ltTop = 6, rtBot = 6, rtTop = 7, ltBot = 7
 }
 
 local function getHandleRect(name, width, height, ew)
@@ -72,10 +72,10 @@ local function getHandleRect(name, width, height, ew)
 end
 
 local handleAxis = {
-	left = {x=-1, y=0}, right = {x=1, y=0},
+	lt = {x=-1, y=0}, rt = {x=1, y=0},
 	top = {x=0, y=-1}, bot = {x=0, y=1},
-	leftTop = {x=-1, y=-1}, rightTop = {x=1, y=-1},
-	leftBottom = {x=-1, y=1}, rightBottom = {x=1, y=1},
+	ltTop = {x=-1, y=-1}, rtTop = {x=1, y=-1},
+	ltBot = {x=-1, y=1}, rtBot = {x=1, y=1},
 }
 
 -- Some function upvalues:
@@ -406,27 +406,32 @@ end
 
 -- Public functions:
 --------------------------------------------------
-function M.new(id, left, top, width, height, z, align, flags, bgColor, visible, locked, menuCb, drawCb)
+function M.new(id, lt, top, width, height, z, align, flags, bgColor, visible, locked, menuCb, drawCb)
+	-- Handle default args.
 	align = align or 5
 	flags = flags or 2
 	bgColor = bgColor or RGBToInt()
+
+	-- Set win data.
 	local data = {flags = flags, bgColor = bgColor, locked = locked, drawCb = drawCb}
 	winData[id] = data
 
-	-- Menu Stuff
+	-- Create menu.
 	data.menuCb = menuCb
 	data.menu = makeBaseMenu()
 	if locked then  data.menu[1] = "+" .. data.menu[1]  end
-	--data.menu = {"A thing here", "-", "Another option", "^disabled one", ">Options...", "A", "B", "C", "<"}
 	updateMenuActiveItems(id)
 	updateMenuString(id)
 
-	WindowCreate(id, left, top, width, height, align, flags, bgColor)
+	-- Create window.
+	WindowCreate(id, lt, top, width, height, align, flags, bgColor)
 	if visible then  WindowShow(id, true)  end
 	WindowRectOp(id, 1, 0, 0, width, height, normalBorderColor) -- Draw 1 pixel border.
 
+	-- Set draw order.
 	setZ(id, z)
 
+	-- Add main hotspot.
 	local mainHotspotID = makeHotspotID(id, "main")
 	WindowAddHotspot(
 		id, mainHotspotID,
@@ -436,7 +441,7 @@ function M.new(id, left, top, width, height, z, align, flags, bgColor, visible, 
 	)
 	WindowDragHandler(id, mainHotspotID, "mouseDrag", "", 0)
 
-	-- Add edge resize handle hotspots.
+	-- Add edge and corner hotspots.
 	for name,v in pairs(handleHotspotSpecs) do
 		local hotspotID = makeHotspotID(id, name)
 		local lt, top, rt, bot = getHandleRect(name, width, height, edgeWidth)
@@ -450,12 +455,12 @@ function M.new(id, left, top, width, height, z, align, flags, bgColor, visible, 
 	end
 end
 
-function M.draw(winID)
+function M.draw(winID) -- Allow plugins to trigger redraw on their windows.
 	draw(winID)
 end
 
--- Can take a table of items or a variable number of item arguments.
 function M.addMenuItems(winID, startI, ...)
+	-- Can take a variable number of item arguments or table of items.
 	local items = {...}
 	if type(items[1]) == "table" then  items = items[1]  end
 	local startI = (startI or 1) + #baseMenu
