@@ -341,8 +341,8 @@ end
 function mouseDownHandle(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
 	-- Save mouse offset.
-	winData[winID].dragOX = WindowInfo(winID, 17)
-	winData[winID].dragOY = WindowInfo(winID, 18)
+	winData[winID].mouseX = WindowInfo(winID, 17)
+	winData[winID].mouseY = WindowInfo(winID, 18)
 
 	updateSnapList()
 end
@@ -357,20 +357,22 @@ function mouseDragHandle(flags, hotspotID)
 	if not data.locked then
 
 		local ax, ay = handleAxis[hotspotName].x, handleAxis[hotspotName].y
-		local ox, oy = data.dragOX, data.dragOY
-		local mx, my = WindowInfo(winID, 17), WindowInfo(winID, 18)
+		local lastmx, lastmy = data.mouseX, data.mouseY
+		local mx, my = WindowInfo(winID, 17), WindowInfo(winID, 18) -- Mouse coords.
 
-		local dx, dy = mx - ox, my - oy
-		data.dragOX, data.dragOY = mx, my
-		dx, dy = dx * ax, dy * ay
+		local dx, dy = mx - lastmx, my - lastmy
+		data.mouseX, data.mouseY = mx, my -- Save current mouse coords in win data.
+		dx, dy = dx * ax, dy * ay -- Multiplied by the axis dir, so they are positive along the edge normal.
 
 		local width, height = WindowInfo(winID, 3), WindowInfo(winID, 4)
 		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
 		local maxLt, maxBot = lt + width - windowMinSize, top + height - windowMinSize
 
+		-- Set new width/height
 		width = math.max(width + dx, windowMinSize)
 		height = math.max(height + dy, windowMinSize)
 
+		-- If moving the top or left sides, set new x/y.
 		if ax == -1 then  lt = math.min(lt - dx, maxLt)  end
 		if ay == -1 then  top = math.min(top - dy, maxBot)  end
 
