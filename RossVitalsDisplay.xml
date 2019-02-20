@@ -115,6 +115,13 @@ local statColors = { -- Bar fill colors.
 	xp = RGBToInt(20, 50, 120), burden = RGBToInt(0, 140, 255),
 	alignment = RGBToInt(100),
 }
+local statNotifColors = {
+	hp = RGBToInt(200, 0, 0), gp = RGBToInt(30, 144, 255),
+	xp = RGBToInt(0, 255, 255), burden = RGBToInt(90, 180, 0),
+	maxhp = RGBToInt(255, 0, 0), maxgp = RGBToInt(50, 160, 255),
+	alignment = RGBToInt(170)
+}
+local notifBracketColor = RGBToInt(190)
 
 -- Current Working Data & Settings:
 -- 	If applicable, the initial defaults are set here, but they will be
@@ -236,9 +243,13 @@ end
 
 -- Drawing & Output:
 --------------------------------------------------
-local function sendNotification(text, gain_loss, diff)
+local function sendNotification(stat, gain_loss, diff)
 	-- Use gain_loss to figure the color.
-	Note(string.format("{%+i %s}", diff, text))
+	ColourNote(
+		RGBColourToName(notifBracketColor), "", "{",
+		RGBColourToName(statNotifColors[stat]), "", string.format("%+i %s", diff, stat),
+		RGBColourToName(notifBracketColor), "", "}"
+	)
 end
 
 local function calcFontSize(text, curFont, w, h)
