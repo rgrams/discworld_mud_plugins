@@ -227,7 +227,8 @@ end
 
 local snapList = { x = {}, y = {} }
 local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4}
-local snapDist = 5
+local snapDist = 10
+local snapModifierCode = 0x02 -- Control.
 
 -- Make a list of positions for each axis where window edges are.
 local function updateSnapList()
@@ -241,10 +242,8 @@ local function updateSnapList()
 				rect[k] = WindowInfo(winID, code)
 			end
 			local x2, y2 = rect.x + rect.width, rect.y + rect.height
-			if not snapList.x[rect.x] then  snapList.x[rect.x] = true  end
-			if not snapList.x[x2] then  snapList.x[x2] = true  end
-			if not snapList.y[rect.y] then  snapList.y[rect.y] = true  end
-			if not snapList.y[y2] then  snapList.y[y2] = true  end
+			snapList.x[rect.x] = true;  snapList.x[x2] = true
+			snapList.y[rect.y] = true;  snapList.y[y2] = true
 		end
 	end
 end
@@ -339,10 +338,24 @@ function mouseUnhoverHandle(flags, hotspotID)
 end
 
 function mouseDownHandle(flags, hotspotID)
-	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	-- Save mouse offset.
-	winData[winID].mouseX = WindowInfo(winID, 17)
-	winData[winID].mouseY = WindowInfo(winID, 18)
+	local winID, handleName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	-- Get mouse pos.
+	local mouseX = WindowInfo(winID, 17)
+	local mouseY = WindowInfo(winID, 18)
+
+	-- Get current window rect.
+	local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
+	local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
+	local rt, bot = lt + w, top + h
+
+	-- Save mouse offset relative to moving edges.
+	data.dragOX, data.dragOY = 0, 0
+	local ax, ay = handleAxis[handleName].x, handleAxis[handleName].y
+	if ax == 1 then  data.dragOX = rt - mouseX
+	elseif ax == -1 then  data.dragOX = lt - mouseX  end
+	if ay == 1 then  data.dragOY = bot - mouseY
+	elseif ay == -1 then  data.dragOY = top - mouseY  end
 
 	updateSnapList()
 end
@@ -351,34 +364,48 @@ function mouseCancelDownHandle(flags, hotspotID)
 	mouseUnhoverHandle(flags, hotspotID)
 end
 
+local function moveEdge(edge, oppEdge, target, snap, axis, dir)
+	-- Set to target pos.
+	edge = target
+	-- Snap.
+	if snap then  edge = getSnap(edge, axis) or edge  end
+	-- Ensure minimum window size.
+	local clampFunc = dir == 1 and math.max or math.min
+	edge = clampFunc(edge, oppEdge + dir*windowMinSize)
+	return edge
+end
+
 function mouseDragHandle(flags, hotspotID)
-	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local winID, handleName = winIDFromHotspotID(hotspotID)
 	local data = winData[winID]
+	local snapping = not (bit.test(flags, snapModifierCode))
 	if not data.locked then
 
-		local ax, ay = handleAxis[hotspotName].x, handleAxis[hotspotName].y
-		local lastmx, lastmy = data.mouseX, data.mouseY
-		local mx, my = WindowInfo(winID, 17), WindowInfo(winID, 18) -- Mouse coords.
+		local ax, ay = handleAxis[handleName].x, handleAxis[handleName].y
 
-		local dx, dy = mx - lastmx, my - lastmy
-		data.mouseX, data.mouseY = mx, my -- Save current mouse coords in win data.
-		dx, dy = dx * ax, dy * ay -- Multiplied by the axis dir, so they are positive along the edge normal.
+		-- Get mouse pos and add drag offset.
+		local mouseX, mouseY = WindowInfo(winID, 17), WindowInfo(winID, 18) -- Get mouse coords.
+		local targetX, targetY = mouseX + data.dragOX, mouseY + data.dragOY
 
-		local width, height = WindowInfo(winID, 3), WindowInfo(winID, 4)
+		-- Get current window rect.
+		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
 		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
-		local maxLt, maxBot = lt + width - windowMinSize, top + height - windowMinSize
+		local rt, bot = lt + w, top + h
 
-		-- Set new width/height
-		width = math.max(width + dx, windowMinSize)
-		height = math.max(height + dy, windowMinSize)
+		-- Calculate new positions of appropriate edges.
+		if ax == 1 then  rt = moveEdge(rt, lt, targetX, snapping, "x", 1)
+		elseif ax == -1 then  lt = moveEdge(lt, rt, targetX, snapping, "x", -1)
+		end
+		if ay == 1 then  bot = moveEdge(bot, top, targetY, snapping, "y", 1)
+		elseif ay == -1 then  top = moveEdge(top, bot, targetY, snapping, "y", -1)
+		end
 
-		-- If moving the top or left sides, set new x/y.
-		if ax == -1 then  lt = math.min(lt - dx, maxLt)  end
-		if ay == -1 then  top = math.min(top - dy, maxBot)  end
+		-- Update width & height
+		w = rt - lt
+		h = bot - top
 
-		WindowResize(winID, width, height, data.bgColor)
+		WindowResize(winID, w, h, data.bgColor)
 		WindowPosition(winID, lt, top, 0, data.flags)
-
 		draw(winID)
 	end
 end
