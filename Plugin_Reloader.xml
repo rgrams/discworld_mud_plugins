@@ -5,9 +5,9 @@ A tiny plugin for reloading other plugins by typing a command.
 
 Type "reload plugin <pluginName>" to reload any other installed plugin.
 
-Is this easier than hitting CTRL-Shift-P, clicking the plugin, tab-tab-tab
--enter? No, probably not. Except for subsequent times, when you may be able
-to just press up a few times and enter it again.
+After you have done this once, the plugin will remember the name of the
+last plugin you reloaded (saved across sessions too) and you can press
+Ctrl+Alt+Shift+R to reload it again.
 
 -->
 <!DOCTYPE muclient>
@@ -44,8 +44,8 @@ local errors = {
 	[error_code.eOK] = "Plugin reload successful.",
 	[error_code.eNoSuchPlugin] = "No plugin named '%s' is installed.",
 	[error_code.eBadParameter] = "We can't reload ourself.",
-	[error_code.ePluginFileNotFound] = "Plugin file not found",
-	[error_code.eProblemsLoadingPlugin] = "Parsing or other problem in plugin file - see error window"
+	[error_code.ePluginFileNotFound] = "Plugin file not found.",
+	[error_code.eProblemsLoadingPlugin] = "Parsing or other problem in plugin file - see error messages."
 }
 
 local hotkey = "Ctrl+Alt+Shift+R"
@@ -88,7 +88,6 @@ function OnPluginInstall()  init()  end
 function OnPluginEnable()  init()  end
 function OnPluginClose()  final()  end
 function OnPluginDisable()  final() end
-
 
 ]]>
 </script>

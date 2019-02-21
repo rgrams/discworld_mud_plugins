@@ -41,7 +41,7 @@ A mostly-generic GMCP handler & subscription interface for other plugins. It ena
 ## Plugin Reloader
 A tiny plugin for reloading other plugins by typing a command or pressing a hotkey combination.
 
-Type "reload plugin `pluginName`" to reload any other installed plugin.
+Type "`reload plugin <plugin_name>`" to reload any other installed plugin.
 You can also press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> to reload the last plugin you reloaded. The last plugin name is saved between sessions.
 
 ## window
