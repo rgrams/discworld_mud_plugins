@@ -447,7 +447,7 @@ end
 function onGMCPReceived(message, params)
 	local data = json.decode(params)
 	if message == "char.info" then
-		vitals = nil -- New character, clear data.
+		--vitals = nil -- New character, clear data.
 	elseif message == "char.vitals" then
 		if not vitals then -- First packet for this character.
 			vitals = copyData(data)
