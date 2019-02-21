@@ -42,7 +42,7 @@ A mostly-generic GMCP handler & subscription interface for other plugins. It ena
 A tiny plugin for reloading other plugins by typing a command or pressing a hotkey combination.
 
 Type "reload plugin `pluginName`" to reload any other installed plugin.
-You can also press <kbd>Ctrl+Alt+Shift+R</kbd> to reload the last plugin you reloaded. The last plugin name is saved between sessions.
+You can also press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> to reload the last plugin you reloaded. The last plugin name is saved between sessions.
 
 ## window
 A Lua module to help manage miniwindows inside the client window that plugins can use to show stuff. The ones created by this module will already be set up with some common features:
