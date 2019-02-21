@@ -130,7 +130,7 @@ local notifBracketColor = RGBToInt(190)
 -- 	If applicable, the initial defaults are set here, but they will be
 --		saved and loaded from disk after the plugin is run the first time.
 --------------------------------------------------
-local vitals = {alignment=0,maxhp=100,hp=0,xp=0,maxgp=100,burden=0,gp=0}
+local vitals = {isEmptyVitals=true,alignment=0,maxhp=100,hp=0,xp=0,maxgp=100,burden=0,gp=0}
 local gpRegen = 3
 local hpRegen = 4
 local heartTimer = "heartbeat"
@@ -403,17 +403,17 @@ end
 
 -- Update with new vitals data.
 -- Data table can have any number of valid stat keys.
-local function updateVitals(newVitals)
+local function updateVitals(newVitals, forceUpdate)
 	if type(newVitals.alignment) == "string" then
 		alignStr = newVitals.alignment
 		newVitals.alignment = ALIGNMENT_NUMBERS[newVitals.alignment]
 	end
-	local needRedraw = false
+	local needRedraw = forceUpdate
 	for stat,val in pairs(newVitals) do
 		if IS_STAT[stat] then
 			-- Get diff and store.
 			local diff = val - vitals[stat]
-			diffs[stat] = val - vitals[stat]
+			diffs[stat] = diff
 
 			if diff ~= 0 then  needRedraw = true  end
 
@@ -446,31 +446,32 @@ end
 --------------------------------------------------
 function onGMCPReceived(message, params)
 	local data = json.decode(params)
-	if message == "char.info" then
-		--vitals = nil -- New character, clear data.
-	elseif message == "char.vitals" then
-		if not vitals then -- First packet for this character.
-			vitals = copyData(data)
+	if message == "char.vitals" then
+		if vitals.isEmptyVitals then -- First packet.
+			vitals = copyData(data) -- So we won't show diff notifications.
+			vitals.alignment = ALIGNMENT_NUMBERS[vitals.alignment]
 		end
-		updateVitals(data)
+		updateVitals(data, true) -- We're making all diffs zero, so need to force update.
 	end
 end
 
 -- Heartbeat Timer:
 --------------------------------------------------
 function heartbeatTick(timerName)
-	local needUpdate = false
-	local newVitals
-	if vitals.gp < vitals.maxgp and gpRegen > 0 then
-		needUpdate = true
-		newVitals = {gp = math.min(vitals.maxgp, vitals.gp + gpRegen)}
+	if not vitals.isEmptyVitals then
+		local needUpdate = false
+		local newVitals
+		if vitals.gp < vitals.maxgp and gpRegen > 0 then
+			needUpdate = true
+			newVitals = {gp = math.min(vitals.maxgp, vitals.gp + gpRegen)}
+		end
+		if vitals.hp < vitals.maxhp and hpRegen > 0 then
+			needUpdate = true
+			newVitals = newVitals or {}
+			newVitals.hp = math.min(vitals.maxhp, vitals.hp + hpRegen)
+		end
+		if needUpdate then  updateVitals(newVitals)  end
 	end
-	if vitals.hp < vitals.maxhp and hpRegen > 0 then
-		needUpdate = true
-		newVitals = newVitals or {}
-		newVitals.hp = math.min(vitals.maxhp, vitals.hp + hpRegen)
-	end
-	if needUpdate then  updateVitals(newVitals)  end
 end
 
 -- Input Box Stuff:
@@ -639,10 +640,8 @@ end
 --------------------------------------------------
 local function init()
 	-- Subscribe to GMCP.
-	CallPlugin(
-		GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived",
-		"char.vitals", "char.info"
-	)
+	CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived",
+		"char.vitals")
 
 	-- Create Window.
 	window.new(
@@ -684,8 +683,7 @@ end
 -- Teardown - OnPluginClose (uninstall) and OnPluginDisable.
 --------------------------------------------------
 local function final()
-	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID,
-		"char.vitals", "char.info")
+	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "char.vitals")
 	updateWinRect()
 	WindowDelete(winID)
 	DeleteTimer(heartTimer)
