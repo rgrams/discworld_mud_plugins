@@ -39,9 +39,10 @@ A mostly-generic GMCP handler & subscription interface for other plugins. It ena
    * If a subscribed plugin is disabled or removed, it will be automatically unsubscribed.
 
 ## Plugin Reloader
-A tiny plugin for reloading other plugins by typing a command.
+A tiny plugin for reloading other plugins by typing a command or pressing a hotkey combination.
 
-Type "reload plugin <pluginName>" to reload any other installed plugin. This is _sometimes_ faster than opening the plugins list, clicking the plugin, and pressing the reinstall button (or: Ctrl-Shift-P, click, tab-tab-tab-enter).
+Type "reload plugin `pluginName`" to reload any other installed plugin.
+You can also press <kbd>Ctrl+Alt+Shift+R</kbd> to reload the last plugin you reloaded. The last plugin name is saved between sessions.
 
 ## window
 A Lua module to help manage miniwindows inside the client window that plugins can use to show stuff. The ones created by this module will already be set up with some common features:

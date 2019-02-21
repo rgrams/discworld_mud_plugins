@@ -19,6 +19,7 @@ to just press up a few times and enter it again.
 	purpose="Easily(?) reloading plugins."
 	id="cc69a4535a8549670ec82ffb"
 	language="Lua"
+	save_state="y"
 	date_written="2019-02-15 13:13:35"
 	requires="5.05"
 	version="1.0"
@@ -47,12 +48,47 @@ local errors = {
 	[error_code.eProblemsLoadingPlugin] = "Parsing or other problem in plugin file - see error window"
 }
 
+local hotkey = "Ctrl+Alt+Shift+R"
+
+local loadLastDummyName = "&& Load last &&"
+local lastPlugin
+
 function reloadPlugin(name, line, wildcards)
-	ColourNote("yellow", "", "Reload Plugin: " .. wildcards[1])
-	local err, msg = pcall(ReloadPlugin, wildcards[1])
+	local pluginName = wildcards[1]
+	if pluginName == loadLastDummyName then
+		if lastPlugin then
+			pluginName = lastPlugin
+		else
+			local msg = "Reload Plugin (hotkey): No remembered plugin to load."
+			ColourNote("yellow", "", msg)
+			return
+		end
+	end
+	ColourNote("yellow", "", "Reload Plugin: " .. pluginName)
+	local err, msg = pcall(ReloadPlugin, pluginName)
 	local s = errors[msg] or ("Unknown Error: " .. tostring(msg))
-	ColourNote("yellow", "", "   " .. string.format(s, wildcards[1]))
+	ColourNote("yellow", "", "   " .. string.format(s, pluginName))
+	if msg == error_code.eOK then  lastPlugin = pluginName  end
 end
+
+local function init()
+	lastPlugin = GetVariable("lastPlugin")
+	Accelerator(hotkey, "reload plugin " .. loadLastDummyName)
+end
+
+local function final()
+	Accelerator(hotkey, "", 0) -- Reset hotkey.
+end
+
+function OnPluginSaveState()
+	if lastPlugin then  SetVariable("lastPlugin", lastPlugin)  end
+end
+
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final() end
+
 
 ]]>
 </script>
