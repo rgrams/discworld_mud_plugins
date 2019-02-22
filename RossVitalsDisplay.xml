@@ -35,33 +35,69 @@ require "json"
 local SELF_ID = GetPluginID()
 local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
 
--- Get require path - relative path from mushclient directory.
---------------------------------------------------
+-- Get require path for modules - relative path from mushclient directory.
 local mushClientPath, pluginPath = GetInfo(59), GetPluginInfo(SELF_ID, 20)
 local requirePath = string.match(pluginPath, mushClientPath .. "\\(.*)\\$")
 requirePath = string.gsub(requirePath, "\\", ".")
 if string.len(requirePath) > 0 then  requirePath = requirePath .. "."  end
---------------------------------------------------
 
 local RGBToInt = require (requirePath .. "RGBToInt")
 local window = require (requirePath .. "window")
 
 -- Utility functions.
 --------------------------------------------------
-local function copyData(d)
+local function shallowCopy(d)
 	t = {}
 	for k,v in pairs(d) do  t[k] = v  end
 	return t
 end
 
-local function toboolean(str) -- Convert a value to a boolean.
-	if str == nil then  return false -- nil ==> false
-	elseif str == false or str == "false" then  return false  end -- false, or "false" ==> false
-	return true -- Anything else ==> true
+local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
+	if v == nil then  return false
+	elseif v == false or v == "false" then  return false  end
+	return true -- Anything other than nil, false, or "false" ==> true.
 end
+
+-- Hidden User Settings:
+--------------------------------------------------
+--		I didn't think these needed to be in the menu options, or they just
+-- 	aren't there yet, but feel free to change them.
+
+local labelFontSizes = { 6, 8, 10, 12, 14, 16, 18 } -- Font sizes to load. Labels are scaled in increments.
+local labelFontName = ""
+local labelAllowedFraction = 0.35 -- Fraction of the total available width that the label is allowed to take.
+local labelSizeDownFraction = 0.9 -- If the label is larger than this * allowed space, size it down.
+local labelSizeUpFraction = 0.7 -- If the label is smaller than this * allowed space, size it up.
+local labelColor = RGBToInt(255)
+local labelStatStrings = { -- To convert stat keys into text for display labels.
+	hp = "HP", gp = "GP", xp = "XP", burden = "Bu", alignment = "Al"
+}
+local labelHorizPadding = 2
+
+local statColors = { -- Bar fill colors.
+	hp = RGBToInt(200, 0, 0), gp = RGBToInt(90, 180, 0),
+	xp = RGBToInt(20, 50, 120), burden = RGBToInt(0, 140, 255),
+	alignment = RGBToInt(100),
+}
+local statNotifColors = {
+	hp = RGBToInt(200, 0, 0), maxhp = RGBToInt(255, 0, 0),
+	gp = RGBToInt(30, 144, 255), maxgp = RGBToInt(50, 160, 255),
+	xp = RGBToInt(0, 255, 255),
+	burden = RGBToInt(90, 180, 0),
+	alignment = RGBToInt(170)
+}
+local notifBracketColor = RGBToInt(190)
+
+local winPadding = 2 -- Padding between bars and edge of window
+local winBackgroundColor = RGBToInt(0, 0, 0)
+local barBackgroundColor = RGBToInt(35)
+local barFillColor = RGBToInt(225, 100, 25)
+local barBorderColor = RGBToInt(120)
 
 -- Constants:
 --------------------------------------------------
+-- 	MUSHclient or Discworld stuff that shouldn't change.
+
 local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4, z = 22}
 
 local ALL_STATS = {
@@ -80,6 +116,9 @@ for i,v in ipairs(ALL_STATS) do
 	table.insert(NOTIF_SETTING_KEYS, "notify" .. v .. "Loss")
 end
 
+local MAX_HP_REGEN = 6
+local MAX_GP_REGEN = 5
+
 local ALIGNMENT_NUMBERS = {
 	["extremely good"] = 50,
 	["very good"] = 25,
@@ -94,61 +133,20 @@ local ALIGNMENT_NUMBERS = {
 	["extremely evil"] = -50,
 }
 
-local MAX_HP_REGEN = 6
-local MAX_GP_REGEN = 5
-
--- Private Settings:
---		I didn't think these needed to be in the menu options, but feel free
---		to change them.
+-- Current Working Data & Settings Vars:
 --------------------------------------------------
-local labelFontSizes = { 6, 8, 10, 12, 14, 16, 18 } -- Font sizes to load. Labels are scaled in increments.
-local labelFontName = ""
-local labelAllowedFraction = 0.35 -- Fraction of the total available width that the label is allowed to take.
-local labelSizeDownFraction = 0.9 -- If the label is larger than this * allowed space, size it down.
-local labelSizeUpFraction = 0.7 -- If the label is smaller than this * allowed space, size it up.
-local labelColor = RGBToInt(255)
-local labelStatStrings = { -- To convert stat keys into text for display labels.
-	hp = "HP", gp = "GP", xp = "XP", burden = "Bu", alignment = "Al"
-}
-local longestLabelString = "HP"
-local labelHorizPadding = 2
-
-local statColors = { -- Bar fill colors.
-	hp = RGBToInt(200, 0, 0), gp = RGBToInt(90, 180, 0),
-	xp = RGBToInt(20, 50, 120), burden = RGBToInt(0, 140, 255),
-	alignment = RGBToInt(100),
-}
-local statNotifColors = {
-	hp = RGBToInt(200, 0, 0), gp = RGBToInt(30, 144, 255),
-	xp = RGBToInt(0, 255, 255), burden = RGBToInt(90, 180, 0),
-	maxhp = RGBToInt(255, 0, 0), maxgp = RGBToInt(50, 160, 255),
-	alignment = RGBToInt(170)
-}
-local notifBracketColor = RGBToInt(190)
-
--- Current Working Data & Settings:
 -- 	If applicable, the initial defaults are set here, but they will be
 --		saved and loaded from disk after the plugin is run the first time.
---------------------------------------------------
+
 local vitals = {isEmptyVitals=true,alignment=0,maxhp=100,hp=0,xp=0,maxgp=100,burden=0,gp=0}
+local diffs = {}
 local gpRegen = 3
 local hpRegen = 4
-local heartTimer = "heartbeat"
-local heartTimerFlags = 1 + 1024 + 16384 -- enabled, replace (just in case), and temporary? ("don't save to world file"?)
 local alignStr = "neutral"
-local diffs = {}
-local winID = SELF_ID .. "VitalsDisplay"
 local winRect = {x = 500, y = 0, width = 350, height = 70, z = 0}
-local labelFonts = {}
-local WIN_PADDING = 2 -- Padding between bars and edge of window
-local winBackgroundColor = RGBToInt(0, 0, 0)
-local barBackgroundColor = RGBToInt(35)
-local barFillColor = RGBToInt(225, 100, 25)
-local barBorderColor = RGBToInt(120)
 local showSettings = { -- Which stats to display.
 	hp = true, gp = true, xp = true, burden = true, alignment = true
 }
-local showCount = 0 -- Save number of stats shown so we don't have to count keys every time.
 local notifSettings = {
 	hp = {gainOn = true, gainT = 20, lossOn = false, lossT = 5},
 	maxhp = {gainOn = false, gainT = 0, lossOn = true, lossT = 0},
@@ -158,6 +156,19 @@ local notifSettings = {
 	burden = {gainOn = false, gainT = 0, lossOn = false, lossT = 0},
 	alignment = true,
 }
+
+-- Other Plugin Vars:
+--------------------------------------------------
+-- 	Random other stuff used by the plugin.
+
+local showCount = 0 -- Save number of stats shown so we don't have to count keys every draw.
+local winID = SELF_ID .. "VitalsDisplay"
+local labelFonts = {}
+local lastFont
+local longestLabelString = "HP"
+
+local HEARTTIMER = "heartbeat"
+local HEARTTIMERFLAGS = 1 + 1024 + 16384 -- enabled, replace (just in case), and temporary? ("don't save to world file"?)
 
 -- Load saved settings.
 --------------------------------------------------
@@ -316,10 +327,8 @@ local function calcFontSize(text, curFont, w, h)
 	return font, fw
 end
 
-local lastFont
-
 local function draw()
-	local p = WIN_PADDING
+	local p = winPadding
 	local width, height = WindowInfo(winID, 3)-p*2, WindowInfo(winID, 4)-p*2
 	local i = 0
 
@@ -448,7 +457,7 @@ function onGMCPReceived(message, params)
 	local data = json.decode(params)
 	if message == "char.vitals" then
 		if vitals.isEmptyVitals then -- First packet.
-			vitals = copyData(data) -- So we won't show diff notifications.
+			vitals = shallowCopy(data) -- So we won't show diff notifications.
 			vitals.alignment = ALIGNMENT_NUMBERS[vitals.alignment]
 		end
 		updateVitals(data, true) -- We're making all diffs zero, so need to force update.
@@ -677,7 +686,7 @@ local function init()
 	draw()
 
 	-- Start Heartbeat Timer.
-	AddTimer(heartTimer, 0, 0, 2, "", heartTimerFlags, "heartbeatTick")
+	AddTimer(HEARTTIMER, 0, 0, 2, "", HEARTTIMERFLAGS, "heartbeatTick")
 end
 
 -- Teardown - OnPluginClose (uninstall) and OnPluginDisable.
@@ -686,7 +695,7 @@ local function final()
 	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "char.vitals")
 	updateWinRect()
 	WindowDelete(winID)
-	DeleteTimer(heartTimer)
+	DeleteTimer(HEARTTIMER)
 end
 
 function OnPluginInstall()  init()  end
