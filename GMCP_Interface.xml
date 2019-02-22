@@ -155,7 +155,7 @@ local subscrPlugins = {}
 -- Subscribe a plugin (with callback name) to one or more GMCP packet names.
 function subscribe(pluginID, callbackName, ...)
 	if debugMode > 0 then
-		debugNote("GMCP Interface: subscribe - " .. GetPluginInfo(pluginID, 17))
+		debugNote("GMCP Interface: subscribe - " .. tostring(GetPluginInfo(pluginID, 1)))
 	end
 	local pluginMsgs = subscrPlugins[pluginID] or {}
 	local messages = {...}
@@ -172,7 +172,7 @@ end
 -- Unsubscribe a plugin from one or more GMCP packet names.
 function unsubscribe(pluginID, ...)
 	if debugMode > 0 then
-		debugNote("GMCP Interface: unsubscribe - " .. GetPluginInfo(pluginID, 17))
+		debugNote("GMCP Interface: unsubscribe - " .. tostring(GetPluginInfo(pluginID, 1)))
 	end
 	local pluginMsgs = subscrPlugins[pluginID]
 	if not pluginMsgs then  return  end
@@ -262,11 +262,11 @@ function OnPluginTelnetSubnegotiation(code, packet)
 		if name then
 			if validPacketNames[name] then
 				if debugMode == 1 then -- Brief
-					if not debugPacket or debugPacket == name then
+					if not debugPacketName or debugPacketName == name then
 						debugNote(name)
 					end
 				elseif debugMode == 2 then -- Verbose
-					if not debugPacket or debugPacket == name then
+					if not debugPacketName or debugPacketName == name then
 						debugNote(packet)
 					end
 				end
