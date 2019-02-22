@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<muclient>
+<plugin
+	name="Hotkeys"
+	id="263f7e4e9823a715a199f004"
+	language="Lua"
+	save_state="y"
+	date_written="2019-02-21 14:31:56"
+	requires="5.05"
+	version="1.0"
+	>
+</plugin>
+
+<aliases>
+	<alias
+		script="addHotkey"
+		match='^add hotkey ([\w\d+]+) \"(.+)\" (\d+)$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+	<alias
+		script="removeHotkey"
+		match='^remove hotkey ([\w+]+)$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+	<alias
+		script="hotkeyHelp"
+		match='^hotkey help$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+	<alias
+		script="hotkeySendtoList"
+		match='^hotkey sendto list$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+	<alias
+		script="hotkeyShowHotkeyList"
+		match='^hotkey list$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+</aliases>
+
+<script>
+	<![CDATA[
+
+-- "Send To" Codes:
+
+-- The most useful ones are 0:World, 1:Command, 2:Output, 10:Execute, and maybe 12:Script.
+local SENDTO = {
+	[0] = {"World", "Sends it to the MUD."},
+	[1] = {"Command", "Adds it in the input box. (Only if you haven't typed anything yet apparently.)"},
+	[2] = {"Output", "Prints it, sort of like using 'frimble', or the Note() function."},
+	[3] = {"Status", "Puts it in the status bar at the bottom of the MUSHclient."},
+	[4] = {"Notepad (new)", ""},
+	[5] = {"Notepad (append)", ""},
+	[6] = {"Log File", ""},
+	[7] = {"Notepad (replace)", ""},
+	[8] = {"Command Queue", ""},
+	[9] = {"Send To Variable", ""},
+	[10] = {"Execute", "Send to client as if you typed it. Will be checked by other aliases, plugins, etc. before going to the MUD."},
+	[11] = {"Speedwalk", "(send text is speedwalk, queue it)"},
+	[12] = {"Script", "Execute as code."},
+	[13] = {"Immediate", "(send to world in front of speedwalk queue)"},
+	[14] = {"Script", "after omit (send to script engine, after lines have been omitted)"},
+}
+
+require "json"
+
+local hotkeys = {
+	-- ["Ctrl+M"] = {"minimap ", 1},
+}
+
+local txtCol = "white"
+local bgCols = { "#303030", "#702020", "" }
+
+local function debugNote(msg, bgColorCode)
+	bgColorCode = bgColorCode or 1
+	ColourNote(txtCol, bgCols[bgColorCode], msg)
+end
+
+function addHotkey(name, line, wildcards)
+	local keyCombo = string.lower(wildcards[1])
+	local content = wildcards[2]
+	local sendTo = tonumber(wildcards[3])
+	if sendTo < 1 or sendTo > 14 then
+		debugNote(
+			"Add Hotkey Failed: Invalid 'sendTo' number: " .. wildcards[3], 2
+		)
+		return
+	end
+	debugNote(
+		"Adding Hotkey: " .. keyCombo .. ' - "' .. content ..
+		'", sendTo: ' .. wildcards[3] .. " (" .. SENDTO[sendTo][1] .. ")"
+	)
+	if hotkeys[keyCombo] then
+		Tell("   ")
+		debugNote(
+			"Removing old binding for: "  .. keyCombo .. ' - "' .. content ..
+			'", sendTo: ' .. wildcards[3] .. " (" .. SENDTO[sendTo][1] .. ")",
+			2
+		)
+	end
+	hotkeys[keyCombo] = {content, sendTo}
+	AcceleratorTo(keyCombo, content, sendTo)
+end
+
+function removeHotkey(name, line, wildcards)
+	local keyCombo = string.lower(wildcards[1])
+	local hk = hotkeys[keyCombo]
+	if hk then
+		debugNote("Removing Hotkey: " .. keyCombo .. " - " .. hk[1] ..
+			", sendTo: " .. tostring(hk[2]) )
+		Accelerator(keyCombo, "", 0)
+		hotkeys[keyCombo] = nil
+	else
+		debugNote("Remove Hotkey Failed. Couldn't find binding for: " ..
+			keyCombo .. ". ", 2 )
+	end
+end
+
+function hotkeyHelp(name, line, wildcards)
+	Note("")
+	debugNote("---     Hotkey Plugin Help     ---")
+	Note("")
+	debugNote(' * To add a hotkey, type: add hotkey <keycombo> "<text to send>" <sendTo code> ')
+	debugNote('      For example: add hotkey Ctrl+1 "minimap route 1" 10 ', 3)
+	Note("")
+	debugNote(' * To remove a hotkey, type: remove hotkey <keycombo> ')
+	debugNote('      For example: remove hotkey Shift+Alt+F1 ', 3)
+	Note("")
+	debugNote(' * To see a list of "sendTo" codes, type: hotkey sendto list ')
+	Note("")
+	debugNote(' * To see your current list of hotkeys, type: hotkey list ')
+	Note("")
+end
+
+function hotkeySendtoList(name, line, wildcards)
+	Note("")
+	debugNote("--- Hotkey 'sendTo' Codes List ---")
+	Note("")
+	for i=0,14 do
+		local v = SENDTO[i]
+		Tell("   ");
+		ColourTell(txtCol, bgCols[1], tostring(i) .. " = " .. v[1])
+		debugNote(" - " .. v[2], 3)
+	end
+	Note("")
+	debugNote("The most useful ones are probably 0, 1, 2, 10, and maybe 12. ")
+	Note("")
+end
+
+function hotkeyShowHotkeyList(name, line, wildcards)
+	Note("")
+	debugNote("---      Current Hotkeys:      ---")
+	Note("")
+	local haveAHotkey = false
+	for k,v in pairs(hotkeys) do
+		haveAHotkey = true
+		Tell("   ")
+		debugNote(
+			"[" .. k .. '] - "' .. v[1] ..
+			'", sendTo: ' .. v[2] .. " (" .. SENDTO[v[2]][1] .. ")"
+		)
+	end
+	if not haveAHotkey then  debugNote("    -- you don't have any --", 3)  end
+	Note("")
+end
+
+local function init()
+	debugNote('Hotkey plugin enabled: type "hotkey help" for help.')
+	hotkeys = GetVariable("hotkeys")
+	if hotkeys then  hotkeys = json.decode(hotkeys)
+	else  hotkeys = {}  end
+	for k,v in pairs(hotkeys) do
+		AcceleratorTo(k, v[1], v[2])
+	end
+end
+
+local function final()
+	for k,v in pairs(hotkeys) do
+		AcceleratorTo(k, "", 0) -- Reset hotkey.
+	end
+end
+
+function OnPluginSaveState()
+	local listStr = json.encode(hotkeys)
+	SetVariable("hotkeys", listStr)
+end
+
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final()  end
+
+	]]>
+</script>
+
+
+</muclient>
