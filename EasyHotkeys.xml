@@ -60,8 +60,8 @@
 -- The most useful ones are 0:World, 1:Command, 2:Output, 10:Execute, and maybe 12:Script.
 local SENDTO = {
 	[0] = {"World", "Sends it to the MUD."},
-	[1] = {"Command", "Adds it in the input box. (Only if you haven't typed anything yet apparently.)"},
-	[2] = {"Output", "Prints it, sort of like using 'frimble', or the Note() function."},
+	[1] = {"Command", "Adds it in the input box. (Only if you haven't typed anything yet.)"},
+	[2] = {"Output", "Prints it, like using 'frimble', or the Note() function."},
 	[3] = {"Status", "Puts it in the status bar at the bottom of the MUSHclient."},
 	[4] = {"Notepad (new)", ""},
 	[5] = {"Notepad (append)", ""},
@@ -79,11 +79,20 @@ local SENDTO = {
 require "json"
 
 local hotkeys = {
-	-- ["Ctrl+M"] = {"minimap ", 1},
+	-- [1] = {"Ctrl+M", "minimap ", 1},
 }
 
 local txtCol = "white"
 local bgCols = { "#303030", "#702020", "" }
+
+local function hotkeyExists(keyCombo)
+	for i,v in ipairs(hotkeys) do
+		if v[1] == keyCombo then
+			return i
+		end
+	end
+	return false
+end
 
 local function debugNote(msg, bgColorCode)
 	bgColorCode = bgColorCode or 1
@@ -104,26 +113,32 @@ function addHotkey(name, line, wildcards)
 		"Adding Hotkey: " .. keyCombo .. ' - "' .. content ..
 		'", sendTo: ' .. wildcards[3] .. " (" .. SENDTO[sendTo][1] .. ")"
 	)
-	if hotkeys[keyCombo] then
+	local existingIndex = hotkeyExists(keyCombo)
+	if existingIndex then
+		local old = hotkeys[existingIndex]
 		Tell("   ")
 		debugNote(
-			"Removing old binding for: "  .. keyCombo .. ' - "' .. content ..
-			'", sendTo: ' .. wildcards[3] .. " (" .. SENDTO[sendTo][1] .. ")",
+			"Replaces old binding for: "  .. keyCombo .. ' - "' .. old[2] ..
+			'", sendTo: ' .. old[3] .. " (" .. SENDTO[old[3]][1] .. ")",
 			2
 		)
+		hotkeys[existingIndex][2] = content
+		hotkeys[existingIndex][3] = sendTo
+	else
+		table.insert(hotkeys, {keyCombo, content, sendTo})
 	end
-	hotkeys[keyCombo] = {content, sendTo}
 	AcceleratorTo(keyCombo, content, sendTo)
 end
 
 function removeHotkey(name, line, wildcards)
 	local keyCombo = string.lower(wildcards[1])
-	local hk = hotkeys[keyCombo]
-	if hk then
-		debugNote("Removing Hotkey: " .. keyCombo .. " - " .. hk[1] ..
-			", sendTo: " .. tostring(hk[2]) )
+	local index = hotkeyExists(keyCombo)
+	if index then
+		local hk = hotkeys[index]
+		debugNote("Removing Hotkey: " .. keyCombo .. " - " .. hk[2] ..
+			", sendTo: " .. tostring(hk[3]) .. " (" .. SENDTO[hk[3]][1] .. ")")
 		Accelerator(keyCombo, "", 0)
-		hotkeys[keyCombo] = nil
+		table.remove(hotkeys, index)
 	else
 		debugNote("Remove Hotkey Failed. Couldn't find binding for: " ..
 			keyCombo .. ". ", 2 )
@@ -180,12 +195,12 @@ function hotkeyShowHotkeyList(name, line, wildcards)
 	debugNote("---      Current Hotkeys:      ---")
 	Note("")
 	local haveAHotkey = false
-	for k,v in pairs(hotkeys) do
+	for i,v in ipairs(hotkeys) do
 		haveAHotkey = true
 		Tell("   ")
 		debugNote(
-			"[" .. k .. '] - "' .. v[1] ..
-			'", sendTo: ' .. v[2] .. " (" .. SENDTO[v[2]][1] .. ")"
+			"[" .. v[1] .. '] - "' .. v[2] ..
+			'", sendTo: ' .. v[3] .. " (" .. SENDTO[v[3]][1] .. ")"
 		)
 	end
 	if not haveAHotkey then  debugNote("    -- you don't have any --", 3)  end
@@ -194,17 +209,19 @@ end
 
 local function init()
 	debugNote('Hotkey plugin enabled: type "hotkey help" for help.')
-	hotkeys = GetVariable("hotkeys")
-	if hotkeys then  hotkeys = json.decode(hotkeys)
-	else  hotkeys = {}  end
-	for k,v in pairs(hotkeys) do
-		AcceleratorTo(k, v[1], v[2])
+	local loaded = GetVariable("hotkeys")
+	if loaded then
+		loaded = json.decode(loaded)
+		for i,v in ipairs(loaded) do -- Only keep indexed hotkeys.
+			hotkeys[i] = v
+			AcceleratorTo(v[1], v[2], v[3])
+		end
 	end
 end
 
 local function final()
-	for k,v in pairs(hotkeys) do
-		AcceleratorTo(k, "", 0) -- Reset hotkey.
+	for i,v in ipairs(hotkeys) do
+		AcceleratorTo(v[1], "", 0) -- Reset hotkey.
 	end
 end
 
@@ -220,6 +237,5 @@ function OnPluginDisable()  final()  end
 
 	]]>
 </script>
-
 
 </muclient>
