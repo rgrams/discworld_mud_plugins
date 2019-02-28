@@ -17,14 +17,14 @@
 <aliases>
 	<alias
 		script="addHotkey"
-		match='^add hotkey ([\w\d+]+) \"(.+)\" (\d+)$'
+		match='^add hotkey (.+?) \"(.+)\" (\d+)$'
 		enabled="y"
 		regexp="y"
 		sequence="100"
 	></alias>
 	<alias
 		script="removeHotkey"
-		match='^remove hotkey ([\w+]+)$'
+		match='^remove hotkey (.+?)$'
 		enabled="y"
 		regexp="y"
 		sequence="100"
