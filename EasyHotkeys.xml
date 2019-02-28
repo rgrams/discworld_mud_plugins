@@ -2,7 +2,9 @@
 <!DOCTYPE muclient>
 <muclient>
 <plugin
-	name="Hotkeys"
+	name="EasyHotkeys"
+	author="Ross Grams"
+	purpose="Create hotkeys without scripting."
 	id="263f7e4e9823a715a199f004"
 	language="Lua"
 	save_state="y"
