@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+	 name="RossAsciiMap"
+	 author="Ross Grams"
+	 id="4045bd321bb34f7bc51a3ce8"
+	 language="Lua"
+	 save_state="y"
+	 date_written="2019-02-22 13:38:17"
+	 requires="5.05"
+	 version="1.0"
+	 >
+</plugin>
+
+<script>
+	<![CDATA[
+
+local SELF_ID = GetPluginID()
+local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
+
+local winID = SELF_ID .. "RossAsciiMap"
+
+-- Get require path for modules - relative path from mushclient directory.
+local mushClientPath, pluginPath = GetInfo(59), GetPluginInfo(SELF_ID, 20)
+local requirePath = string.match(pluginPath, mushClientPath .. "\\(.*)\\$")
+requirePath = string.gsub(requirePath, "\\", ".")
+if string.len(requirePath) > 0 then  requirePath = requirePath .. "."  end
+
+local RGBToInt = require (requirePath .. "RGBToInt")
+local window = require (requirePath .. "window")
+
+require "tprint"
+
+local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
+	if v == nil then  return false
+	elseif v == false or v == "false" then  return false  end
+	return true -- Anything other than nil, false, or "false" ==> true.
+end
+
+local SPACE = ANSI(36)
+local CONNECTION = ANSI(37)
+local PLAYER = ANSI(33)
+
+local mxpColors = {
+	["MXP<CyanMXP>"] = ANSI(36),
+	["MXP<GreenMXP>"] = ANSI(32),
+	["MXP<YellowMXP>"] = ANSI(33),
+	["MXP<RedMXP>"] = ANSI(31),
+	["MXP<BlueMXP>"] = ANSI(34),
+}
+
+local ANSI_TO_RGB = {
+	Black = RGBToInt(),
+	Red = RGBToInt(255, 0, 0),
+	Green = RGBToInt(0, 255, 0),
+	Yellow = RGBToInt(255, 255, 0),
+	Blue = RGBToInt(0, 0, 255),
+	Magenta = RGBToInt(255, 0, 255),
+	Cyan = RGBToInt(0, 255, 255),
+	White = RGBToInt(255),
+	Silver = RGBToInt(192)
+}
+local ansiReset = ANSI(37)
+
+local mapLines = {}
+
+local winRect = {x = 1500, y = 0, width = 200, height = 200, z = 0}
+local winLocked = false
+local fontID = "font"
+local font = "fixedsys"
+local fontSize = 8
+local lineSpacing = 0
+
+local fontHeight
+local fontCharWidth
+local playerY, playerX = 1, 1
+local changeTable
+
+local function loadSettings()
+	for k,v in pairs(winRect) do
+		winRect[k] = tonumber(GetVariable("window_" .. k)) or v
+	end
+	local winLocked = toboolean(GetVariable("windowLocked"))
+end
+
+local function saveVar(name, val, nilVal)
+	if val == nil then  val = nilVal or false  end
+	SetVariable(name, tostring(val))
+end
+
+local function saveSettings()
+	for k,v in pairs(winRect) do
+		saveVar("window_" .. k, v)
+	end
+	saveVar("windowLocked", winLocked)
+end
+
+function OnPluginSaveState()
+	saveSettings()
+end
+
+--[[
+room.map "
+.......\u001b[4zMXP<GreenMXP>ff\u001b[3z
+........\u001b[4zMXP<GreenMXP>f\u001b[3z
+........ \u001b[3z
+.....@\u001b[4zMXP<BlueMXP>*\u001b[3z  \u001b[3z
+....\u001b[4zMXP<YellowMXP>@\u001b[3z\u001b[4zMXP<BlueMXP>*\u001b[3z   \u001b[3z
+\u001b[4zMXP<RedMXP>@@@@#\u001b[4zMXP<BlueMXP>**\u001b[3z  \u001b[3z
+.... @   \u001b[3z
+...      \u001b[3z
+...   .  \u001b[3z
+"
+]]
+
+--[[
+room.map "
+    \u001b[3z\u001b[4zMXP<GreenMXP>&\u001b[3z
+    \u001b[3z|\u001b[3z
+ \u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z \u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z
+   \u001b[3z\\|\u001b[3z \u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z
+    \u001b[3z\u001b[4zMXP<YellowMXP>@\u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z-\u001b[3z
+    \u001b[3z|\u001b[3z   \u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z
+    \u001b[3z\u001b[4zMXP<CyanMXP>*\u001b[3z
+    \u001b[3z|\u001b[3z
+    \u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z
+   \u001b[3z\/\u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z\\\u001b[3z
+"
+]]
+
+--[[
+room.map "
+    MXP<GreenMXP>&
+    |
+ -MXP<GreenMXP>$ MXP<GreenMXP>$MXP<RedMXP>+
+   \\| MXP<RedMXP>+
+    MXP<YellowMXP>@-MXP<GreenMXP>$-MXP<GreenMXP>$-
+    |   MXP<RedMXP>+
+    MXP<CyanMXP>*
+    |
+    MXP<GreenMXP>$
+   \/MXP<RedMXP>+\\
+"
+
+]]
+
+-- [1] = "white",
+-- [8] = "green"
+
+local function nextColorMatch(regex, mapStr, startPos, changeTable, lineI)
+	local startI, endI, captures = regex:match(mapStr, startPos)
+	if endI then
+		changeTable[lineI] = changeTable[lineI] or {}
+		changeTable[lineI][startI] = captures[1]
+
+		-- tprint(captures)
+		-- Note(startI, ", ", endI, ", ", tostring(captures[1]))
+		local pre = string.sub(mapStr, 1, startI - 1)
+		local post = string.sub(mapStr, endI + 1)
+		mapStr = pre .. post
+	end
+	-- We're removing everything from startI to endI, so our startI should
+	-- also be the start for the next match.
+	return startI, mapStr
+end
+
+function onGMCPReceived(message, dataStr)
+	local map = dataStr
+	map = string.sub(map, 2) -- remove starting ".
+
+	--	map = string.gsub(map, "\\u001b%[3z", ansiReset)
+
+	map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
+	-- map = string.gsub(map, "\\u.......", "") -- remove all ANSI colors codes.
+
+	map = string.gsub(map, "MXP<send href.-MXP>", "") -- remove MXP links, if any.
+
+	-- for k,v in pairs(mxpColors) do
+		-- map = string.gsub(map, k, v)
+	-- end
+
+	-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
+	map = string.gsub(map, "\\u001b%[3z", "MXP<SilverMXP>")
+
+	map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
+	map = string.gsub(map, "\\\/", "\/") -- change \/ to /.
+
+	local regex = rex.new("MXP<(.+?)MXP>")
+	changeTable = {}
+
+	for i=#mapLines,1,-1 do  mapLines[i] = nil  end
+	for line in string.gmatch(map, "(.-)\\n") do
+		table.insert(mapLines, line)
+		--AnsiNote(ansiReset .. line)
+	end
+
+	for i,line in ipairs(mapLines) do
+		local startPos = 1
+		while startPos do
+			startPos, line = nextColorMatch(regex, line, startPos, changeTable, i)
+		end
+		mapLines[i] = line
+	end
+	window.draw(winID)
+end
+
+local function drawWindow()
+	local baseCol = ANSI_TO_RGB.Silver
+	local col = baseCol
+	for li,line in ipairs(mapLines) do
+		local x, y = lineSpacing, lineSpacing + (li - 1)*(fontHeight + lineSpacing)
+		col = baseCol
+
+		for ci=1,string.len(line) do
+			if changeTable[li] and changeTable[li][ci] then
+				col = ANSI_TO_RGB[changeTable[li][ci]]
+			end
+			local c = string.sub(line, ci, ci)
+			local ox = (ci - 1) * fontCharWidth
+			WindowText(winID, fontID, c, x + ox, y, 200, 200, col)
+		end
+	end
+end
+
+local function init()
+	CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived", "room.map")
+	loadSettings()
+	window.new(
+		winID, winRect.x, winRect.y, winRect.width, winRect.height, winRect.z,
+		nil, nil, nil, true, winLocked, nil, drawWindow
+	)
+	WindowFont(winID, fontID, font, fontSize, nil, nil, nil, nil, 0)
+	fontHeight = WindowFontInfo(winID, fontID, 1)
+	fontCharWidth = WindowFontInfo(winID, fontID, 7) -- max character width
+	window.draw(winID)
+end
+
+local function final()
+	winRect.x, winRect.y, winRect.width, winRect.height, winRect.z = window.getRect(winID)
+	winLocked = window.getLocked(winID)
+	WindowDelete(winID)
+	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map")
+end
+
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final() end
+
+	]]>
+</script>
+
+</muclient>
