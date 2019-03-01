@@ -103,7 +103,7 @@ function addHotkey(name, line, wildcards)
 	local keyCombo = string.lower(wildcards[1])
 	local content = wildcards[2]
 	local sendTo = tonumber(wildcards[3])
-	if sendTo < 1 or sendTo > 14 then
+	if sendTo < 0 or sendTo > 14 then
 		debugNote(
 			"Add Hotkey Failed: Invalid 'sendTo' number: " .. wildcards[3], 2
 		)
