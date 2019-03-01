@@ -19,7 +19,6 @@
 
 local SELF_ID = GetPluginID()
 local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
-
 local winID = SELF_ID .. "RossAsciiMap"
 
 -- Get require path for modules - relative path from mushclient directory.
@@ -31,25 +30,11 @@ if string.len(requirePath) > 0 then  requirePath = requirePath .. "."  end
 local RGBToInt = require (requirePath .. "RGBToInt")
 local window = require (requirePath .. "window")
 
-require "tprint"
-
 local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
 	if v == nil then  return false
 	elseif v == false or v == "false" then  return false  end
 	return true -- Anything other than nil, false, or "false" ==> true.
 end
-
-local SPACE = ANSI(36)
-local CONNECTION = ANSI(37)
-local PLAYER = ANSI(33)
-
-local mxpColors = {
-	["MXP<CyanMXP>"] = ANSI(36),
-	["MXP<GreenMXP>"] = ANSI(32),
-	["MXP<YellowMXP>"] = ANSI(33),
-	["MXP<RedMXP>"] = ANSI(31),
-	["MXP<BlueMXP>"] = ANSI(34),
-}
 
 local ANSI_TO_RGB = {
 	Black = RGBToInt(),
@@ -62,7 +47,6 @@ local ANSI_TO_RGB = {
 	White = RGBToInt(255),
 	Silver = RGBToInt(192)
 }
-local ansiReset = ANSI(37)
 
 local mapLines = {}
 
@@ -77,6 +61,7 @@ local fontHeight
 local fontCharWidth
 local playerY, playerX = 1, 1
 local changeTable
+local regex = rex.new("MXP<(.+?)MXP>")
 
 local function loadSettings()
 	for k,v in pairs(winRect) do
@@ -101,54 +86,6 @@ function OnPluginSaveState()
 	saveSettings()
 end
 
---[[
-room.map "
-.......\u001b[4zMXP<GreenMXP>ff\u001b[3z
-........\u001b[4zMXP<GreenMXP>f\u001b[3z
-........ \u001b[3z
-.....@\u001b[4zMXP<BlueMXP>*\u001b[3z  \u001b[3z
-....\u001b[4zMXP<YellowMXP>@\u001b[3z\u001b[4zMXP<BlueMXP>*\u001b[3z   \u001b[3z
-\u001b[4zMXP<RedMXP>@@@@#\u001b[4zMXP<BlueMXP>**\u001b[3z  \u001b[3z
-.... @   \u001b[3z
-...      \u001b[3z
-...   .  \u001b[3z
-"
-]]
-
---[[
-room.map "
-    \u001b[3z\u001b[4zMXP<GreenMXP>&\u001b[3z
-    \u001b[3z|\u001b[3z
- \u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z \u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z
-   \u001b[3z\\|\u001b[3z \u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z
-    \u001b[3z\u001b[4zMXP<YellowMXP>@\u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z-\u001b[3z
-    \u001b[3z|\u001b[3z   \u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z
-    \u001b[3z\u001b[4zMXP<CyanMXP>*\u001b[3z
-    \u001b[3z|\u001b[3z
-    \u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z
-   \u001b[3z\/\u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z\\\u001b[3z
-"
-]]
-
---[[
-room.map "
-    MXP<GreenMXP>&
-    |
- -MXP<GreenMXP>$ MXP<GreenMXP>$MXP<RedMXP>+
-   \\| MXP<RedMXP>+
-    MXP<YellowMXP>@-MXP<GreenMXP>$-MXP<GreenMXP>$-
-    |   MXP<RedMXP>+
-    MXP<CyanMXP>*
-    |
-    MXP<GreenMXP>$
-   \/MXP<RedMXP>+\\
-"
-
-]]
-
--- [1] = "white",
--- [8] = "green"
-
 local function nextColorMatch(regex, mapStr, startPos, changeTable, lineI)
 	local startI, endI, captures = regex:match(mapStr, startPos)
 	if endI then
@@ -158,9 +95,6 @@ local function nextColorMatch(regex, mapStr, startPos, changeTable, lineI)
 			playerY = lineI
 			playerX = startI
 		end
-
-		-- tprint(captures)
-		-- Note(startI, ", ", endI, ", ", tostring(captures[1]))
 		local pre = string.sub(mapStr, 1, startI - 1)
 		local post = string.sub(mapStr, endI + 1)
 		mapStr = pre .. post
@@ -173,31 +107,18 @@ end
 function onGMCPReceived(message, dataStr)
 	local map = dataStr
 	map = string.sub(map, 2) -- remove starting ".
-
-	--	map = string.gsub(map, "\\u001b%[3z", ansiReset)
-
 	map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
-	-- map = string.gsub(map, "\\u.......", "") -- remove all ANSI colors codes.
-
 	map = string.gsub(map, "MXP<send href.-MXP>", "") -- remove MXP links, if any.
-
-	-- for k,v in pairs(mxpColors) do
-		-- map = string.gsub(map, k, v)
-	-- end
-
 	-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
 	map = string.gsub(map, "\\u001b%[3z", "MXP<SilverMXP>")
-
 	map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
 	map = string.gsub(map, "\\\/", "\/") -- change \/ to /.
 
-	local regex = rex.new("MXP<(.+?)MXP>")
 	changeTable = {}
 
 	for i=#mapLines,1,-1 do  mapLines[i] = nil  end
 	for line in string.gmatch(map, "(.-)\\n") do
 		table.insert(mapLines, line)
-		--AnsiNote(ansiReset .. line)
 	end
 
 	for i,line in ipairs(mapLines) do
