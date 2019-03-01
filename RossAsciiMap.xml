@@ -154,6 +154,10 @@ local function nextColorMatch(regex, mapStr, startPos, changeTable, lineI)
 	if endI then
 		changeTable[lineI] = changeTable[lineI] or {}
 		changeTable[lineI][startI] = captures[1]
+		if captures[1] == "Yellow" then -- This is the line the player is on.
+			playerY = lineI
+			playerX = startI
+		end
 
 		-- tprint(captures)
 		-- Note(startI, ", ", endI, ", ", tostring(captures[1]))
@@ -207,10 +211,18 @@ function onGMCPReceived(message, dataStr)
 end
 
 local function drawWindow()
+	winRect.width = WindowInfo(winID, 3)
+	winRect.height = WindowInfo(winID, 4)
+
+	local mapCenterX = (playerX - 0.5) * fontCharWidth
+	local mapCenterY = (playerY - 0.5) * (fontHeight + lineSpacing)
+
+	local x, y = winRect.width/2 - mapCenterX, winRect.height/2 - mapCenterY
+
 	local baseCol = ANSI_TO_RGB.Silver
 	local col = baseCol
 	for li,line in ipairs(mapLines) do
-		local x, y = lineSpacing, lineSpacing + (li - 1)*(fontHeight + lineSpacing)
+		local lx, ly = x, y + (li - 1)*(fontHeight + lineSpacing)
 		col = baseCol
 
 		for ci=1,string.len(line) do
@@ -219,7 +231,7 @@ local function drawWindow()
 			end
 			local c = string.sub(line, ci, ci)
 			local ox = (ci - 1) * fontCharWidth
-			WindowText(winID, fontID, c, x + ox, y, 200, 200, col)
+			WindowText(winID, fontID, c, lx + ox, ly, 200, 200, col)
 		end
 	end
 end
