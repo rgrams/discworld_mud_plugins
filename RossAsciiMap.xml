@@ -50,7 +50,7 @@ local colors = {
 	Normal = RGBToInt(192)
 }
 local font = "fixedsys"
-local fontSize = 8
+local fontSize = 10 -- NOTE: Fixedsys doesn't go any smaller than this.
 local lineSpacing = 0
 local charSpacing = 0
 
@@ -145,7 +145,7 @@ local function drawWindow()
 	winRect.width = WindowInfo(winID, 3)
 	winRect.height = WindowInfo(winID, 4)
 
-	local mapCenterX = (playerX - 0.5) * fontCharWidth
+	local mapCenterX = (playerX - 0.5) * (fontCharWidth + charSpacing)
 	local mapCenterY = (playerY - 0.5) * (fontHeight + lineSpacing)
 
 	local x, y = winRect.width/2 - mapCenterX, winRect.height/2 - mapCenterY
@@ -161,7 +161,7 @@ local function drawWindow()
 				col = colors[changeTable[li][ci]]
 			end
 			local c = string.sub(line, ci, ci)
-			local ox = (ci - 1) * fontCharWidth
+			local ox = (ci - 1) * (fontCharWidth + charSpacing)
 			WindowText(winID, fontID, c, lx + ox, ly, 200, 200, col)
 		end
 	end
@@ -178,7 +178,7 @@ local function init()
 	)
 	WindowFont(winID, fontID, font, fontSize, nil, nil, nil, nil, 0)
 	fontHeight = WindowFontInfo(winID, fontID, 1)
-	fontCharWidth = WindowFontInfo(winID, fontID, 7) -- max character width
+	fontCharWidth = WindowFontInfo(winID, fontID, 6) -- Average character width.
 	window.draw(winID)
 end
 
