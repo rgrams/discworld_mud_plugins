@@ -1,14 +1,23 @@
 
 # Ross's MUSHclient Plugins
-_**For the Discworld MUD.**_
+_**For the Discworld MUD.**_ (mostly)
 
-A work in progress...
+The plugins here should all work, but some of them are works in progress, so they may have bugs I haven't found and fixed yet, or be missing some features. If you use any of them and find problems or have suggestions, please open an Issue.
 
 # User Plugins
 Plugins that do things a normal user will care about. (As opposed to "back-end" plugins that only make life easier for other plugins.)
 
+## Easy Hotkeys
+This plugin lets you bind any hotkeys you want from within the MUSHclient, without doing any scripting. The MUSHclient normally only allows you to use a limited set of hotkeys (from the World Properties > Input > Macros window) and with limited options for how they work. From a plugin script you can use almost any key or combination of keys, as well as the full list of "Send To:" options, like you have with a trigger or alias. This plugin simply provides an interface for users to add and remove hotkeys without having to edit and reload a plugin, or have any knowledge of scripting whatsoever. This plugin is not Discworld-specific.
+
+There are built-in instructions, so you just need to add the plugin via the Plugins window (File > Plugins...). It will tell you to type "hotkey help" when it loads.
+
+Hotkeys set with this plugin will generally override any functionality the given key combo had before. Such as: Ctrl+C for copy, Ctrl+M for minimize, etc. They will go back to normal if the hotkey is removed or the plugin is uninstalled or disabled.
+
 ## Vitals Display
 A status bar display for some or all of your character's "vital" stats (Hp, Gp, Xp, Burden, and Alignment). Can also send text notifications when any of these stats change. You can set various options through the window's right-click menu.
+
+This is almost identical to Quow's vitals bars, only you can fully choose which stats to display, and you can have notifications for the gain or loss of each stat, with any threshold value you like for each. It doesn't have much in the way of visual customization right now, but I will add more in the future.
 
 #### Features:
 * Uses GMCP to update your stats whenever you send a command to the MUD.
