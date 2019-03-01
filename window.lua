@@ -228,7 +228,7 @@ end
 --------------------------------------------------
 
 local snapList = { x = {}, y = {} }
-local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4}
+local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4, z = 22}
 local snapDist = 10
 local snapModifierCode = 0x02 -- Control.
 
@@ -241,7 +241,9 @@ local function updateSnapList()
 		if visible then
 			local rect = {}
 			for k,code in pairs(WIN_RECT_INFO_CODES) do
-				rect[k] = WindowInfo(winID, code)
+				if k ~= "z" then
+					rect[k] = WindowInfo(winID, code)
+				end
 			end
 			local x2, y2 = rect.x + rect.width, rect.y + rect.height
 			snapList.x[rect.x] = true;  snapList.x[x2] = true
@@ -597,6 +599,16 @@ end
 
 function M.getLocked(winID)
 	return winData[winID].locked
+end
+
+function M.getRect(winID)
+	local x, y, w, h, z
+	x = WindowInfo(winID, WIN_RECT_INFO_CODES.x)
+	y = WindowInfo(winID, WIN_RECT_INFO_CODES.y)
+	w = WindowInfo(winID, WIN_RECT_INFO_CODES.width)
+	h = WindowInfo(winID, WIN_RECT_INFO_CODES.height)
+	z = WindowInfo(winID, WIN_RECT_INFO_CODES.z)
+	return x, y, w, h, z
 end
 
 return M
