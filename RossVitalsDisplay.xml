@@ -80,11 +80,20 @@ local statColors = { -- Bar fill colors.
 	alignment = RGBToInt(100),
 }
 local statNotifColors = {
-	hp = RGBToInt(200, 0, 0), maxhp = RGBToInt(255, 0, 0),
-	gp = RGBToInt(30, 144, 255), maxgp = RGBToInt(50, 160, 255),
-	xp = RGBToInt(0, 255, 255),
-	burden = RGBToInt(90, 180, 0),
-	alignment = RGBToInt(170)
+	gain = {
+		hp = RGBToInt(120, 190, 0), maxhp = RGBToInt(120, 255, 0),
+		gp = RGBToInt(130, 144, 255), maxgp = RGBToInt(130, 160, 255),
+		xp = RGBToInt(0, 255, 255),
+		burden = RGBToInt(90, 180, 0),
+		alignment = RGBToInt(220, 255, 255),
+	},
+	loss = {
+		hp = RGBToInt(200, 0, 0), maxhp = RGBToInt(255, 0, 0),
+		gp = RGBToInt(30, 144, 255), maxgp = RGBToInt(50, 160, 255),
+		xp = RGBToInt(0, 255, 255),
+		burden = RGBToInt(90, 180, 0),
+		alignment = RGBToInt(255, 255, 200),
+	},
 }
 local notifBracketColor = RGBToInt(190)
 
@@ -265,9 +274,10 @@ end
 --------------------------------------------------
 local function sendNotification(stat, gain_loss, diff)
 	-- Use gain_loss to figure the color.
+	local c = statNotifColors[gain_loss][stat]
 	ColourNote(
 		RGBColourToName(notifBracketColor), "", "{",
-		RGBColourToName(statNotifColors[stat]), "", string.format("%+i %s", diff, stat),
+		RGBColourToName(c), "", string.format("%+i %s", diff, stat),
 		RGBColourToName(notifBracketColor), "", "}"
 	)
 end
