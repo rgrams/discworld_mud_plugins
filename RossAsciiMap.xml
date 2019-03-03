@@ -66,6 +66,7 @@ local playerY, playerX = 1, 1
 local changeTable
 local mapLines = {}
 local regex = rex.new("MXP<(.+?)MXP>")
+local hexRegex = rex.new(".*? (#[0-9a-f]{6})")
 
 -- Loading & Saving Settings:
 --------------------------------------------------
@@ -97,12 +98,24 @@ end
 local function nextColorMatch(regex, mapStr, startPos, changeTable, lineI)
 	local startI, endI, captures = regex:match(mapStr, startPos)
 	if endI then
-		changeTable[lineI] = changeTable[lineI] or {}
-		changeTable[lineI][startI] = captures[1]
-		if captures[1] == "Yellow" then -- This is the line the player is on.
-			playerY = lineI
-			playerX = startI
+		local col = captures[1]
+
+		if col == "Yellow" then -- This is the line the player is on.
+			playerX, playerY = startI, lineI
 		end
+
+		-- Convert color string into an RGB value.
+		local s, e, hexCaptures = hexRegex:match(col)
+		if hexCaptures then  col = ColourNameToRGB(hexCaptures[1])
+		elseif colors[col] then  col = colors[col]
+		else
+			Note("RossAsciiMap - Unrecognized color code: '", string.sub(mapStr, startI, endI), "'.")
+			col = colors.Normal
+		end
+		changeTable[lineI] = changeTable[lineI] or {}
+		changeTable[lineI][startI] = col
+
+		-- Cut color code chunk out of map string.
 		local pre = string.sub(mapStr, 1, startI - 1)
 		local post = string.sub(mapStr, endI + 1)
 		mapStr = pre .. post
@@ -116,7 +129,7 @@ function onGMCPReceived(message, dataStr)
 	local map = dataStr
 	map = string.sub(map, 2) -- remove starting ".
 	map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
-	map = string.gsub(map, "MXP<send href.-MXP>", "") -- remove MXP links, if any.
+	map = string.gsub(map, "MXP<[/]*send.-MXP>", "") -- remove MXP links, if any.
 	-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
 	map = string.gsub(map, "\\u001b%[3z", "MXP<NormalMXP>")
 	map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
@@ -158,7 +171,11 @@ local function drawWindow()
 
 		for ci=1,string.len(line) do
 			if changeTable[li] and changeTable[li][ci] then
-				col = colors[changeTable[li][ci]]
+				col = changeTable[li][ci]
+				if type(col) ~= "number" then
+					Note("RossAsciiMap - Weird color value in changeTable: ", changeTable[li][ci])
+					col = colors.Normal
+				end
 			end
 			local c = string.sub(line, ci, ci)
 			local ox = (ci - 1) * (fontCharWidth + charSpacing)
