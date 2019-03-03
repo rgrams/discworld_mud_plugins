@@ -129,7 +129,7 @@ function onGMCPReceived(message, dataStr)
 	local map = dataStr
 	map = string.sub(map, 2) -- remove starting ".
 	map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
-	map = string.gsub(map, "MXP<[/]*send.-MXP>", "") -- remove MXP links, if any.
+	map = string.gsub(map, "MXP<[\\/]-send.-MXP>", "") -- remove MXP links, if any.
 	-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
 	map = string.gsub(map, "\\u001b%[3z", "MXP<NormalMXP>")
 	map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
