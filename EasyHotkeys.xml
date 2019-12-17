@@ -10,7 +10,7 @@
 	save_state="y"
 	date_written="2019-02-21 14:31:56"
 	requires="5.05"
-	version="1.1"
+	version="1.11"
 	>
 </plugin>
 
@@ -100,7 +100,7 @@ local function debugNote(msg, bgColorCode)
 end
 
 function addHotkey(name, line, wildcards)
-	local keyCombo = string.lower(wildcards[1])
+	local keyCombo = wildcards[1]
 	local content = wildcards[2]
 	local sendTo = tonumber(wildcards[3])
 	if sendTo < 0 or sendTo > 14 then
@@ -131,7 +131,7 @@ function addHotkey(name, line, wildcards)
 end
 
 function removeHotkey(name, line, wildcards)
-	local keyCombo = string.lower(wildcards[1])
+	local keyCombo = wildcards[1]
 	local index = hotkeyExists(keyCombo)
 	if index then
 		local hk = hotkeys[index]
