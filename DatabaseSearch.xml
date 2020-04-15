@@ -1,0 +1,714 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+	name="DatabaseSearch"
+	author="Ross Grams"
+	id="0988f1630bed49c5690b56a3"
+	language="Lua"
+	save_state="y"
+	date_written="2020-04-11 17:26:27"
+	requires="5.05"
+	version="1.0"
+	>
+</plugin>
+
+<aliases>
+	<!-- Lower `sequence` == higher priority. -->
+	<alias
+		name="adminTrigger"
+		match="^DatabaseSearch (help|max results|alias prefix)\s?(.*?)$"
+		enabled="y"
+		regexp="y"
+		sequence="97"
+		script="adminTrigger"
+		>
+	</alias>
+	<alias
+		name="rewriteList"
+		match="^ds relist$"
+		enabled="y"
+		regexp="y"
+		sequence="97"
+		script="rewriteList"
+		>
+	</alias>
+	<alias
+		name="continueSearch"
+		match="^ds\s?\.\.\.$"
+		enabled="y"
+		regexp="y"
+		sequence="98"
+		script="continueSearch"
+		>
+	</alias>
+	<alias
+		name="resultsCommand"
+		match="^ds (show|route|details) (\d+)$"
+		enabled="y"
+		regexp="y"
+		sequence="99"
+		script="resultsCommand"
+		>
+	</alias>
+	<alias
+		name="otherSearch"
+		match="^ds (npc|shop|item|description|appraise)(|#|\$)(|\+|\-) ({[\w-]+})?\s?(.+?)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="databaseSearch"
+		>
+	</alias>
+	<alias
+		name="defaultRoomSearch"
+		match="^ds ()(|#|\$)(|\+|\-)({[\w-]+})?\s?(.+?)$"
+		enabled="y"
+		regexp="y"
+		sequence="101"
+		script="databaseSearch"
+		>
+	</alias>
+</aliases>
+
+<script>
+<![CDATA[
+
+-- Settings:
+--------------------------------------------------
+local defaultFGColor = "gray" -- FG = foreground, BG = background
+local defaultBGColor = "black"
+local messageFGColor = "darkorange" -- Opening message
+local messageBGColor = defaultBGColor
+local linkFGColor = "darkorange" -- Clickable links
+local linkBGColor = defaultBGColor
+local indexFGColor = "gray" -- List numbers
+local indexBGColor = defaultBGColor
+local punctFGColor = "gray" -- Punctuation / separators
+local punctBGColor = defaultBGColor
+local resultFGColor = "cyan" -- NPC and item results
+local resultBGColor = defaultBGColor
+local roomFGColor = "gray" -- Room short-name results
+local roomBGColor = defaultBGColor
+local priceFGColor = "cyan" -- Item prices
+local priceBGColor = defaultBGColor
+local warningFGColor = "red" -- Database not found warning.
+local warningBGColor = defaultBGColor
+local extraFGColor = "#45b2ff" -- Overflow or "no results found" messages	.
+local helpDefaultFGColor = "#ababab"
+--------------------------------------------------
+
+-- Initialization:
+--------------------------------------------------
+local SELF_ID = GetPluginID()
+
+-- Get require path for modules - relative path from mushclient directory.
+local mushClientPath, pluginPath = GetInfo(66), GetPluginInfo(SELF_ID, 20)
+local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
+
+local mapsByID = require(requirePath .. "quowMapsByID")
+local quowMapPluginID = "bfe35205f026786ea1d56e3b"
+local aliases = {
+	rewriteList = [[^%s relist$]],
+	continueSearch = [[^%s\s?\.\.\.$]],
+	resultsCommand = [[^%s (show|route|details) (\d+)$]],
+	otherSearch = [[^%s (npc|shop|item|description|appraise)(|#|\$)(|\+|\-) ({[\w-]+})?\s?(.+?)$]],
+	defaultRoomSearch = [[^%s ()(|#|\$)(|\+|\-)({[\w-]+})?\s?(.+?)$]],
+}
+local aliasPrefix = "ds"
+local maxResults = 40
+
+local mapDB
+local results = {}
+local lastSearch = {}
+
+-- Assemble lists of map IDs for each rough area for location filtering.
+local mapAreaKey = 7 -- Index for the map area code for each table in Quow's map data list.
+local mapIDListsByArea = {}
+for mapID,mapData in pairs(mapsByID) do
+	local area = string.lower(mapData[mapAreaKey])
+	mapIDListsByArea[area] = mapIDListsByArea[area] or {}
+	table.insert(mapIDListsByArea[area], mapID)
+end
+for area,list in pairs(mapIDListsByArea) do -- Convert to string lists for SQL.
+	mapIDListsByArea[area] = "("..table.concat(list, ", ")..")"
+end
+
+-- Utility Functions:
+--------------------------------------------------
+local max = math.max
+
+local function getColumnWidth(t, key)
+	local w = 0
+	for i,data in ipairs(results) do
+		local mapName = mapsByID[data.map_id][2]
+		w = max(w, #mapName)
+	end
+end
+
+local function clearList(t)
+	for i=1,#t do
+		t[i] = nil
+	end
+end
+
+local function padStr(str, to, with, padLeft)
+	str = tostring(str)
+	with = with or " "
+	local diff = to - #str
+	if diff > 0 then
+		local pad = string.rep(with, diff)
+		return padLeft and (pad .. str) or (str .. pad)
+	else
+		return str
+	end
+end
+
+-- Link Stuff & Writer Functions:
+--------------------------------------------------
+local function writeError(msg)
+	ColourTell(punctFGColor, punctBGColor, "[Database Search]: ")
+	ColourNote(warningFGColor, warningBGColor, msg)
+end
+
+function jumpToRoomID(room_id)
+	CallPlugin(quowMapPluginID, "QuowJumpToRoomID", room_id)
+end
+
+function routeToRoomID(room_id)
+	CallPlugin(quowMapPluginID, "QuowRouteToRoomID", room_id)
+end
+
+function showNPCDetails(npc_id)
+	CallPlugin(quowMapPluginID, "QuowShowNPCDetails", npc_id)
+end
+
+function showItemDetails(item_name)
+	CallPlugin(quowMapPluginID, "QuowItemDetails", item_name)
+end
+
+local baseLinkActionStr = "!!%s:%s(%s)"
+
+local function addLink(text, tooltip, pluginID, funcName, ...)
+	pluginID = pluginID or SELF_ID
+	local argStr = table.concat({...}, ", ")
+	local action = string.format(baseLinkActionStr, pluginID, funcName, argStr)
+	Hyperlink(action, text, tooltip, linkFGColor, linkBGColor, false);
+end
+
+local linkCommandData = { -- Link text and tooltips for each command function.
+	jumpToRoomID = { text = "Show",
+		tooltip = "Display this location on the minimap." },
+	routeToRoomID = { text = "Route",
+		tooltip = "Attept to find a speedwalk to this location." },
+	showNPCDetails = { text = "Details",
+		tooltip = "Show details of this NPC." },
+	showItemDetails = { text = "Details",
+		tooltip = "Show detailed info such as where item might be found, appraise info etc. for this item." }
+}
+
+local function writeLinks(cmdList, ...)
+	local args = {...}
+	ColourTell(punctFGColor, punctBGColor, "[")
+	for i,command in ipairs(cmdList) do
+		local arg = args[i] or args[#args]
+		local data = linkCommandData[command]
+		addLink(data.text, data.tooltip, SELF_ID, command, arg)
+		if i ~= #cmdList then
+			ColourTell(punctFGColor, punctBGColor, " | ")
+		end
+	end
+	ColourTell(punctFGColor, punctBGColor, "] ")
+end
+
+-- Commands available for each result via clickable links or aliases (for each search type).
+local linkCommands = {}
+linkCommands.room = { "jumpToRoomID", "routeToRoomID" }
+linkCommands.shop = linkCommands.room
+linkCommands.npc = { "showNPCDetails", "jumpToRoomID", "routeToRoomID" }
+linkCommands.item = { "showItemDetails"}
+linkCommands.description = linkCommands.item
+linkCommands.appraise = linkCommands.item
+
+local linkCmdFuncs = {} -- For aliases.
+linkCmdFuncs.room = { show = {jumpToRoomID, "room_id"}, route = {routeToRoomID, "room_id"} }
+linkCmdFuncs.shop = linkCmdFuncs.room
+linkCmdFuncs.npc = { details = {showNPCDetails, "npc_id"}, show = {jumpToRoomID, "room_id"}, route = {routeToRoomID, "room_id"} }
+linkCmdFuncs.item = { details = {showItemDetails, "item_name"}}
+linkCmdFuncs.description = linkCmdFuncs.item
+linkCmdFuncs.appraise = linkCmdFuncs.item
+
+local function writeListItem(data, dataType, idx, arg1)
+	if idx then
+		ColourTell(indexFGColor, indexBGColor, " " .. padStr(idx, 3))
+	end
+	if dataType == "room" then
+		writeLinks(linkCommands[dataType], data.room_id)
+		local mapName = mapsByID[data.map_id][2]
+		mapName = padStr(mapName, arg1 or 0)
+		ColourTell(punctFGColor, punctBGColor, mapName .. " : ")
+		ColourTell(roomFGColor, roomBGColor, data.room_short)
+	elseif dataType == "npc" then
+		writeLinks(linkCommands[dataType], data.npc_id, data.room_id)
+		local mapName = mapsByID[data.map_id][2]
+		mapName = padStr(mapName, arg1 or 0)
+		ColourTell(punctFGColor, punctBGColor, mapName .. " : ")
+		ColourTell(resultFGColor, resultBGColor, data.npc_name)
+	elseif dataType == "shop" then
+		writeLinks(linkCommands[dataType], data.room_id)
+		ColourTell(resultFGColor, resultBGColor, data.item_name)
+		ColourTell(punctFGColor, punctBGColor, " @ ")
+		ColourTell(priceFGColor, priceBGColor, data.sale_price)
+		local mapName = mapsByID[data.map_id][2]
+		ColourTell(punctFGColor, punctBGColor, " in " .. mapName .. " : " .. data.room_short)
+	else -- dataType == "item", "description", or "appraise"
+		writeLinks(linkCommands[dataType], data.item_name)
+		ColourTell(resultFGColor, resultBGColor, data.item_name)
+	end
+	Note("")
+end
+
+-- Searching:
+--------------------------------------------------
+
+--[[ Map Database:
+	room_exits = { room_id, connect_id, exit, guessed, items }
+	items = { item_name, description, appraise_text, weight, dollar_value, searchable, special_find_note }
+	shop_items = { room_id, item_name, sale_price }
+	npc_items = { npc_id, item_name, sale_price }
+	rooms = { room_id, map_id, xpos, ypos, room_short, room_type }
+	room_descriptions = { room_hash, room_id }
+	npc_info = { npc_id, map_id, npc_name, room_id }
+--]]
+
+local searchData = {
+	room = {
+		msgDesc = "room",
+		selection = "*",
+		from = "rooms",
+		whereKey = "room_short",
+		locationFilterAllowed = true,
+	},
+	npc = {
+		msgDesc = "NPC",
+		selection = "*",
+		from = "npc_info",
+		whereKey = "npc_name",
+		locationFilterAllowed = true,
+	},
+	shop = {
+		msgDesc = "shop inventory",
+		selection = "shop_items.*, rooms.map_id, rooms.room_short",
+		from = "shop_items",
+		join = "INNER JOIN rooms on shop_items.room_id = rooms.room_id ",
+		whereKey = "item_name",
+		locationFilterAllowed = true,
+		mapIDKey = "rooms.map_id",
+		-- altSortKeys = { ["$"] = "sale_price" }
+	},
+	item = {
+		msgDesc = "item",
+		selection = "*",
+		from = "items",
+		whereKey = "item_name",
+		-- altSortKeys = { ["$"] = "dollar_value", ["#"] = "weight" }
+	},
+	description = {
+		msgDesc = "item description",
+		selection = "*",
+		from = "items",
+		whereKey = "description"
+	},
+	appraise = {
+		msgDesc = "item appraisal",
+		selection = "*",
+		from = "items",
+		whereKey = "appraise_text"
+	},
+}
+
+local sortDirs = { [""] = "ASC", ["+"] = "ASC", ["-"] = "DESC" }
+
+local baseSearchMsg = "Searching %s database for: '%s'."
+local baseOrderBy = "ORDER BY length(%s) ASC "
+local basePlaceCondition = " AND "
+local baseSearchSQL = "SELECT * FROM %s WHERE (%s LIKE %s%s) %sLIMIT %s"
+
+local SQLTemplate = {
+	"SELECT %s ", -- <selection>
+	"FROM %s ", -- <from>
+	"%s", -- <join>(for shop_items to get .map_id)
+	"WHERE (%s LIKE '%%%s%%'%s) ", -- <whereKey>, <searchText>, <locationCondition>(if present)
+	"ORDER BY %s %s ", -- <sort> <sortDir>
+	"LIMIT %s" -- <maxResults + 1>
+}
+
+local baseSearchSQL = table.concat(SQLTemplate)
+
+local function makeSQLSort(data, sort)
+	if sort ~= "" and data.altSortKeys and data.altSortKeys[sort] then
+			return data.altSortKeys[sort]
+	else
+		return "length("..data.whereKey..")"
+	end
+end
+
+local function makeSQLLocationCondition(data, location)
+	local mapIDList = mapIDListsByArea[location]
+	if location == "" then
+		return ""
+	elseif not data.locationFilterAllowed then
+		writeError("Location filtering not allowed for '"..data.msgDesc.."' searches. Performing unfiltered search...")
+		return ""
+	elseif not mapIDList then
+		writeError("Invalid location filter: '"..location.."'. Performing unfiltered search...")
+		return ""
+	else
+		return " AND "..(data.mapIDKey or "map_id").." IN "..mapIDList
+	end
+end
+
+local function escapeSQL(text)
+	return text and string.gsub(text, "'", "''") or ""
+end
+
+local function makeSQL(data, searchText, location, sort, sortDir, startIdx)
+	searchText = escapeSQL(searchText)
+	-- <selection>, <from>, <join>, <whereKey>, <searchText>, <locationCondition>, <sort>, <sortDir>, <maxResults + 1>
+	local limit = maxResults + 1
+	if startIdx > 1 then  limit = limit.." OFFSET "..startIdx  end
+	local SQL = string.format(baseSearchSQL,
+		data.selection, data.from, data.join or "", data.whereKey, searchText,
+		makeSQLLocationCondition(data, location),
+		makeSQLSort(data, sort), sortDirs[sortDir] or "", limit
+	)
+	return SQL
+end
+
+local function saveLastSearchParams(searchType, searchText, location, sort, sortDir, startIdx, endIdx, didOverflow)
+	lastSearch.type = searchType
+	lastSearch.text = searchText
+	lastSearch.location = location
+	lastSearch.sort = sort
+	lastSearch.sortDir = sortDir
+	lastSearch.startIdx = startIdx
+	lastSearch.endIdx = endIdx
+	lastSearch.didOverflow = didOverflow
+end
+
+local function writeList()
+	local searchType = lastSearch.type
+	local arg1
+	if searchType == "room" or searchType == "npc" then
+		-- Get map name column width.
+		arg1 = 0
+		for i,data in ipairs(results) do
+			local mapName = mapsByID[data.map_id][2]
+			arg1 = max(arg1, #mapName)
+		end
+	end
+
+	-- Write list.
+	for i=lastSearch.startIdx,lastSearch.endIdx do
+		local data = results[i]
+		writeListItem(data, searchType, i, arg1)
+	end
+
+	-- Write overflow message if needed.
+	if lastSearch.didOverflow then
+		local msg = "   Truncated results to %s items. Enter 'ds...' to show the next %s."
+		local msg = string.format(msg, maxResults, maxResults)
+		ColourNote(extraFGColor, defaultBGColor, msg)
+	else
+		ColourNote(extraFGColor, defaultBGColor, "   End of results.")
+	end
+end
+
+-- Global function in case other plugins want to use it.
+function search(searchType, searchText, location, sort, sortDir, startIdx)
+	if searchText == "" then  return  end
+
+	startIdx = startIdx or 1
+	searchType = searchType == "" and "room" or searchType
+	local data = searchData[searchType]
+	if not data then
+		writeError("Unrecognized search type: '"..searchType.."'.")
+		return
+	end
+
+	-- Write opening message: "Searching __ database for: '__'."
+	local msg = string.format(baseSearchMsg, data.msgDesc, searchText)
+	ColourNote(messageFGColor, messageBGColor, msg)
+
+	local SQL = makeSQL(data, searchText, location, sort, sortDir, startIdx)
+
+	local matchWasFound = false
+	for row in mapDB:nrows(SQL) do
+		if not matchWasFound then
+			matchWasFound = true
+			if startIdx == 1 then -- Don't clear if this is a continuation search.
+				clearList(results)
+			end
+		end
+		table.insert(results, row)
+	end
+
+	if matchWasFound then
+		-- Limit is maxResults + 1 so we can check if there would have been more results.
+		local didOverflow = #results > maxResults and #results % maxResults == 1
+		if didOverflow then
+			table.remove(results) -- Remove overflow result from the end.
+		end
+		saveLastSearchParams(searchType, searchText, location, sort, sortDir, startIdx, #results, didOverflow)
+
+		writeList()
+	else -- No match found
+		if #results == 0 then
+			ColourNote(extraFGColor, defaultBGColor, "   No matches found. ")
+		else
+			local msg = "   No matches found. Still remembering results of last '"..
+			lastSearch.type.."' search for: '"..lastSearch.text.."'."
+			ColourNote(extraFGColor, defaultBGColor, msg)
+		end
+	end
+end
+
+-- Alias Handlers:
+--------------------------------------------------
+function rewriteList(name, line, wildcards)
+	if #results > 0 then
+		writeList()
+	else
+		writeError("No results list to print.")
+	end
+end
+
+function databaseSearch(name, line, wildcards)
+	local searchType, sort, sortDir, location, text = unpack(wildcards)
+	location = string.gsub(location, "[{}]", "")
+	search(searchType, text, location, sort, sortDir)
+end
+
+function continueSearch(name, line, wildcards)
+	if lastSearch.didOverflow then
+		search(
+			lastSearch.type, lastSearch.text, lastSearch.location,
+			lastSearch.sort, lastSearch.sortDir, lastSearch.endIdx + 1
+		)
+	elseif not lastSearch.type then
+		writeError("No previous search to continue.")
+	elseif not lastSearch.didOverflow then
+		writeError("Previous search showed the final results.")
+	end
+end
+
+-- Alias Handler for "details"/"show"/"route":
+function resultsCommand(name, line, wildcards)
+	local command = wildcards[1]
+	local index = tonumber(wildcards[2])
+	if not lastSearch.type or #results == 0 then
+		ColourTell(punctFGColor, punctBGColor, "[Database Search]: ")
+		ColourNote(messageFGColor, messageBGColor, "No recent results to use.")
+	elseif lastSearch.type and not linkCmdFuncs[lastSearch.type][command] then
+		ColourTell(punctFGColor, punctBGColor, "[Database Search]: ")
+		local msg = "Can't use '"..command.."' command with results from a '"..lastSearch.type.."' search."
+		ColourNote(messageFGColor, messageBGColor, msg)
+	elseif not results[index] then
+		ColourTell(punctFGColor, punctBGColor, "[Database Search]: ")
+		ColourNote(messageFGColor, messageBGColor, "No recent result at index "..index)
+	else
+		local funcData = linkCmdFuncs[lastSearch.type][command]
+		local func, argKey = funcData[1], funcData[2]
+		func(results[index][argKey])
+	end
+end
+
+-- Database Loading:
+--------------------------------------------------
+local requiredDBTables = { "room_exits", "items", "shop_items", "npc_items", "rooms", "npc_info" }
+
+-- Check if a database has all the required tables in it.
+local function validateDatabase(db, path)
+	local success, errMsg = pcall(db.nrows, db, "SELECT * FROM sqlite_master LIMIT 1;")
+	if not success then
+		writeError("The file: '"..path.."' is not a valid database.")
+		return false
+	end
+	local tables = {}
+	for row in db:nrows("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';") do
+		tables[row.name] = true
+	end
+	for i,tableName in ipairs(requiredDBTables) do
+		if not tables[tableName] then
+			if not suppressErr then
+				writeError("The database file: '"..path.."' does not contain the right data.")
+			end
+			return
+		end
+	end
+	return true
+end
+
+local function loadDatabase(path, suppressErr)
+	local file, errMsg = io.open(path, "r")
+	if file then
+		file:close()
+		local success, result = pcall(sqlite3.open, path)
+		mapDB = success and result or nil
+		if not mapDB then
+			if not suppressErr then
+				writeError("The file: '"..path.."' is not a database.")
+			end
+		else
+			local valid = validateDatabase(mapDB, path)
+			if not valid then
+				mapDB:close()
+				mapDB = nil
+			end
+		end
+	elseif not suppressErr then
+		writeError(errMsg)
+	end
+end
+
+function pickFileAndLoadDatabase()
+	local filePath = utils.filepicker("Locate Quow Map Database", nil, ".db", nil, false)
+	if filePath then
+		loadDatabase(filePath)
+	end
+	if mapDB then -- Enable aliases
+		setAliasesEnabled(true)
+		ColourTell(punctFGColor, punctBGColor, "[Database Search]: ")
+		ColourNote(resultFGColor, resultBGColor, "Successfully loaded database.")
+	end
+end
+
+-- Saving & Loading Settings:
+--------------------------------------------------
+local setMaxResults, setAliasPrefix
+
+local function saveSettings()
+	SetVariable("aliasPrefix", aliasPrefix)
+	SetVariable("maxResults", maxResults)
+end
+
+local function loadSettings()
+	aliasPrefix = GetVariable("aliasPrefix") or aliasPrefix
+	setAliasPrefix(aliasPrefix)
+	maxResults = tonumber(GetVariable("maxResults")) or maxResults
+	setMaxResults(maxResults)
+end
+
+function OnPluginSaveState()
+	saveSettings()
+end
+
+function setMaxResults(x)
+	x = tonumber(x)
+	if not x then
+		writeError("Invalid max results: '"..x.."'")
+	elseif x ~= maxResults then
+		maxResults = x
+		saveSettings()
+		ColourNote(messageFGColor, messageBGColor, "Max results Set To: '"..maxResults.."'")
+	end
+end
+
+-- Enabling, Disabling, & Modifying Aliases:
+--------------------------------------------------
+-- Disabling aliases effectively disables all plugin features.
+local function setAliasesEnabled(enabled)
+	for aliasName,_ in ipairs(aliases) do
+		EnableAlias(aliasName, enabled)
+	end
+end
+
+function setAliasPrefix(prefix)
+	if prefix ~= aliasPrefix then
+		aliasPrefix = prefix
+		for aliasName,matchPattern in pairs(aliases) do
+			SetAliasOption(aliasName, "match", string.format(matchPattern, prefix))
+		end
+		saveSettings()
+		ColourNote(messageFGColor, messageBGColor, "Alias prefix Set To: '"..aliasPrefix.."'")
+	end
+end
+
+-- Trigger Handler for Help and Settings:
+--------------------------------------------------
+
+local Head,Def,Cmd = resultFGColor, helpDefaultFGColor, messageFGColor
+
+local helpText = {
+	{Head, 0, 'Database Search Plugin Commands\n'},
+	{Head, 0, '   Adjust Settings:\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"DatabaseSearch max results <x>"'}, {Def, 0, ' - Set the length of the search results list.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"DatabaseSearch alias prefix <x>"'}, {Def, 0, ' - Set the prefix for the other aliases.\n         - The prefix defaults to "ds".\n'},
+	{Def, 0, '         - NOTE: This is used in a regular expression, so you can\'t use any of the special\n           charactes: \\, ^, $, ., |, ?, *, +, (, ), [, or { without escaping them with a \\.\n'},
+	{Head, 0, '   Search Commands:\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> <{location}> <searchText>"'}, {Def, 0, ' - "Search room short-names, with an optional region filter.\n         - Examples: "ds mended", or "ds {bp} walkway", or "ds {am} high altar".\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> npc <{location}> <searchText>"'}, {Def, 0, ' - "Search for NPCs by name.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> shop <{location}> <searchText>"'}, {Def, 0, ' - "Search for shops that sell items matching your search.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> item <searchText>"'}, {Def, 0, ' - "Search for items.\n         NOTE: no location filter. Click links in the results list to see where to find the item.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> description <searchText>"'}, {Def, 0, ' - "Search for items with matching text in their description.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> appraise" <searchText>"'}, {Def, 0, ' - "Search for items with matching text in their appraisal text.\n'},
+	{Head, 0, '   Search Results Commands:\n'},
+	{Def, 0, '      (These work the same as clicking the links next to the search results.)\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> show <number>"'}, {Def, 0, ' - Centers Quow\'s minimap on the search result of this number.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> route <number>"'}, {Def, 0, ' - Asks Quow\'s minimap to generate a route to this search result.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> details <number>"'}, {Def, 0, ' - Tells Quow\'s Plugin to show details about this item or NPC.\n'},
+	{Head, 0, '   Other Commands:\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix>..."'}, {Def, 0, ' - Shows the next "page" of results if the last search did not show all of them.\n'},
+	{Def, 0, '      - '}, {Cmd, 0, '"<prefix> relist"'}, {Def, 0, ' - Re-prints the most recent list of search results.\n'},
+}
+
+function adminTrigger(name, line, wildcards)
+	local command, arg = wildcards[1], wildcards[2]
+	if command == "help" then
+		for i,v in ipairs(helpText) do
+			local txt = v[3]:gsub("<prefix>", aliasPrefix)
+			ColourTell(v[1], v[2], txt)
+		end
+	elseif command == "max results" then
+		setMaxResults(arg)
+	elseif command == "alias prefix" then
+		setAliasPrefix(arg)
+	end
+end
+
+-- Startup & Shutdown:
+--------------------------------------------------
+local function init()
+	loadSettings()
+	local quowPluginFolder = GetPluginInfo(quowMapPluginID, 20)
+	if quowPluginFolder then
+		local quowMapsFolder = quowPluginFolder .. "maps\\"
+		local quowMapDatabasePath = quowPluginFolder .. "maps\\_quowmap_database.db"
+		loadDatabase(quowMapDatabasePath, true)
+	end
+	if not mapDB then
+		ColourNote(warningFGColor, warningBGColor, "Database-Search Plugin: Failed to automatically get database from Quow map.")
+		addLink("Click Here", "", SELF_ID, "pickFileAndLoadDatabase")
+		ColourNote(messageFGColor, messageBGColor, " to manually locate the '_quowmap_database.db' file. It was expected to be in the 'quow_plugins/maps' folder.")
+		setAliasesEnabled(false)
+	end
+	ColourNote(messageFGColor, messageBGColor, 'Database Search Plugin loaded. Type "DatabaseSearch help" to see the commands list.')
+end
+
+local function final()
+	saveSettings()
+	if mapDB then
+		mapDB:close()
+		mapDB = nil
+	end
+end
+
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final() end
+
+]]>
+</script>
+</muclient>
