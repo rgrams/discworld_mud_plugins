@@ -36,10 +36,8 @@ local SELF_ID = GetPluginID()
 local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
 
 -- Get require path for modules - relative path from mushclient directory.
-local mushClientPath, pluginPath = GetInfo(59), GetPluginInfo(SELF_ID, 20)
-local requirePath = string.match(pluginPath, mushClientPath .. "\\(.*)\\$")
-requirePath = string.gsub(requirePath, "\\", ".")
-if string.len(requirePath) > 0 then  requirePath = requirePath .. "."  end
+local mushClientPath, pluginPath = GetInfo(66), GetPluginInfo(SELF_ID, 20)
+local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
 
 local RGBToInt = require (requirePath .. "RGBToInt")
 local window = require (requirePath .. "window")
