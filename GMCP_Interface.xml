@@ -133,7 +133,7 @@ function setDebugMode(name, line, wildcards)
 	end
 
 	debugMode = mode
-	debugPacketName = packetName
+	debugPacketName = packetName ~= "" and packetName or nil
 
 	local modeStr = DEBUG_MODES[mode]
 	local packetStr = ""
