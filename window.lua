@@ -158,16 +158,15 @@ local function menuResultHandler(winID, i)
 		updateMenuString(winID)
 		updateMenuActiveItems(winID)
 	elseif i == menuActiveI_ZUp then -- Draw-Order Up.
-		setZ(winID, 1, true)
+		setZ(winID, 1, true, true)
 	elseif i == menuActiveI_ZDown then -- Draw-Order Down.
-		setZ(winID, -1, true)
+		setZ(winID, -1, true, true)
 	elseif i == menuActiveI_ZSet then
 		local z = WindowInfo(winID, 22)
 		z = inputBox("Enter your desired Z-Order:", "window.setZ", tostring(z))
 		if tonumber(z) then
 			z = math.floor(tonumber(z))
-			ColourNote("#00FF00", "", "Window Z-Order set to: " .. tostring(z))
-			setZ(winID, z)
+			setZ(winID, z, nil, true)
 		else
 			ColourNote("red", "", "Set Z-Order Failed: Input must be a number.")
 		end
@@ -185,7 +184,7 @@ end
 -- Private Window Manipulation Functions:
 --------------------------------------------------
 -- is local, upvalue set above.
-function setZ(winID, z, relative)
+function setZ(winID, z, relative, printMessage)
 	-- Set Z-Order.
 	if relative then  z = WindowInfo(winID, 22) + z  end
 	WindowSetZOrder(winID, z)
@@ -196,6 +195,9 @@ function setZ(winID, z, relative)
 	menu[menuFullI_ZSet] = s
 	updateMenuString(winID)
 	updateMenuActiveItems(winID)
+	if printMessage then
+		ColourNote("#00FF00", "", "Window Z-Order set to: " .. tostring(z))
+	end
 
 	WindowShow(winID, true)
 end
