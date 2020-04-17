@@ -8,6 +8,7 @@
 
 local baseDir = (...):gsub('[^%.]+$', '')
 local RGBToInt = require (baseDir .. "RGBToInt")
+local max, min = math.max, math.min
 
 local M = {}
 
@@ -17,8 +18,8 @@ local edgeWidth = 6
 local windowMinSize = edgeWidth * 2.5
 local hotspotIdSeparator = "&& "
 
-local hoverBorderColor = 16777215 -- white
-local normalBorderColor = 12632256 -- light grey
+local hoveredHandleColor = 16777215 -- white
+local borderColor = 12632256 -- light grey
 
 local function winIDFromHotspotID(hotspotID)
 	return string.match(hotspotID, "^(.*)&&%s(.*)$")
@@ -176,7 +177,9 @@ local function menuResultHandler(winID, i)
 		i = menuActiveIdxToFullIdx(winID, i) -- Convert index.
 		if i then
 			i = i - #baseMenu -- Send index after base menu. (the index among user-set items)
-			if data.menuCb then  data.menuCb(winID, i, prefix, item)  end
+			if data.callbacks.menu then
+				data.callbacks.menu(winID, i, prefix, item)
+			end
 		end
 	end
 end
@@ -199,31 +202,31 @@ function setZ(winID, z, relative, printMessage)
 		ColourNote("#00FF00", "", "Window Z-Order set to: " .. tostring(z))
 	end
 
-	WindowShow(winID, true)
+	Redraw()
 end
 
 -- Drawing:
 --------------------------------------------------
 local function draw(winID)
 	local data = winData[winID]
-	local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-	-- Draw background
-	WindowRectOp(winID, 2, 0, 0, w, h, data.bgColor)
-	-- Draw border
-	local borderCol = data.hovered and hoverBorderColor or normalBorderColor
-	WindowRectOp(winID, 1, 0, 0, w, h, borderCol)
+	local w, h = data.w, data.h
 
 	-- Call owner's draw callback if any.
-	if data.drawCb then  data.drawCb()  end
+	if data.callbacks.draw then
+		data.callbacks.draw(winID, w, h)
+	else
+		WindowRectOp(winID, 2, 0, 0, w, h, data.bgColor) -- Draw background
+		WindowRectOp(winID, 1, 0, 0, w, h, borderColor) -- Draw border
+	end
 
 	-- Draw hovered handle if any. (on top of any window contents)
 	if data.hoveredHandle then
 		local lt, top, rt, bot = getHandleRect(data.hoveredHandle, w, h, edgeWidth)
-		WindowRectOp(winID, 2, lt, top, rt, bot, hoverBorderColor)
+		WindowRectOp(winID, 2, lt, top, rt, bot, hoveredHandleColor)
 	end
 
 	-- Show window.
-	WindowShow(winID, true)
+	Redraw()
 end
 
 -- Snapping:
@@ -247,59 +250,82 @@ local function updateSnapList()
 					rect[k] = WindowInfo(winID, code)
 				end
 			end
-			local x2, y2 = rect.x + rect.width, rect.y + rect.height
-			snapList.x[rect.x] = true;  snapList.x[x2] = true
-			snapList.y[rect.y] = true;  snapList.y[y2] = true
+			local rt, bot = rect.x + rect.width, rect.y + rect.height
+			snapList.x[rect.x] = true;  snapList.x[rt] = true
+			snapList.y[rect.y] = true;  snapList.y[bot] = true
 		end
 	end
 end
 
--- Gets the closest coordinate to snap to, or nil if none is within 'snapDist'.
-local function getSnap(a, axis)
+-- Returns the original pos if no snap is in range.
+local function snap(pos, axis)
 	local list = snapList[axis]
 	local minDist, minIndex = math.huge, nil
-	for i,_ in pairs(list) do
-		local d = math.abs(a - i)
-		if d < minDist then
-			minDist = d
-			minIndex = i
+	for snapPos,_ in pairs(list) do
+		local dist = math.abs(pos - snapPos)
+		if dist < minDist then
+			minDist = dist
+			minIndex = snapPos
 		end
 	end
 	if minDist < snapDist then
 		return minIndex, minDist
 	else
-		-- Always return a minDist number, but first arg is nil if it's not in range.
-		return nil, minDist
+		return pos, minDist
 	end
 end
 
 -- Main Hotspot Callbacks:
 --------------------------------------------------
-function mouseHover(flags, hotspotID)
+function mainHover(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	if not winData[winID].locked then
-		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-		winData[winID].hovered = true
-		draw(winID)
+	local data = winData[winID]
+	data.hovered = true
+	if data.callbacks.mainHover then
+		data.callbacks.mainHover(flags, hotspotID, hotspotName, winID)
 	end
 end
 
-function mouseUnhover(flags, hotspotID)
+function mainUnhover(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	if not winData[winID].locked then
-		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-		winData[winID].hovered = nil
-		draw(winID)
+	local data = winData[winID]
+	data.hovered = nil
+	if data.callbacks.mainUnhover then
+		data.callbacks.mainUnhover(flags, hotspotID, hotspotName, winID)
 	end
 end
 
-function mouseDown(flags, hotspotID)
+function mainPress(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	if not winData[winID].locked then
-		winData[winID].dragOX = WindowInfo(winID, 14)
-		winData[winID].dragOY = WindowInfo(winID, 15)
+	local data = winData[winID]
+	if data.isDraggingWindow then
+		-- For some reason the Mushclient stops drags when another click is pressed.
+		data.isDraggingWindow = false
+	end
+	if data.callbacks.mainPress then
+		data.callbacks.mainPress(flags, hotspotID, hotspotName, winID)
+	end
+end
 
-		updateSnapList()
+function mainCancelPress(flags, hotspotID)
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if data.callbacks.mainCancelPress then
+		data.callbacks.mainCancelPress(flags, hotspotID, hotspotName, winID)
+	end
+end
+
+function mainRelease(flags, hotspotID)
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if data.callbacks.mainRelease then
+		local consume = data.callbacks.mainRelease(flags, hotspotID, hotspotName, winID)
+	end
+	if not consume and bit.band(flags, miniwin.hotspot_got_rh_mouse) > 0 then
+		-- Open right-click menu.
+		local x, y = WindowInfo(winID, 14), WindowInfo(winID, 15)
+		local i = WindowMenu(winID, x, y, data.menuString)
+		if i ~= "" then  menuResultHandler(winID, tonumber(i))  end
 	end
 end
 
@@ -307,167 +333,178 @@ local _dragSnapDistance = { -- Reuse the same table.
 	lt = 0, rt = 0, top = 0, bot = 0,
 }
 
-function mouseDrag(flags, hotspotID)
+local dragStartOX, dragStartOY -- Initial from mouse to moving thing.
+
+function mainDrag(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
 	local data = winData[winID]
-	if not data.locked then
-		local mouseX = WindowInfo(winID, 17)
-		local mouseY = WindowInfo(winID, 18)
+	if not data.locked and bit.band(flags, miniwin.hotspot_got_lh_mouse) > 0 then
+		if not data.isDraggingWindow then -- Start drag.
+			data.isDraggingWindow = true
+			dragStartOX, dragStartOY = WindowInfo(winID, 14), WindowInfo(winID, 15)
+			updateSnapList()
+		else -- Drag move.
+			local mouseX, mouseY = WindowInfo(winID, 17), WindowInfo(winID, 18)
 
-		-- Get current window rect.
-		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
-		local rt, bot = lt + w, top + h
+			-- Make sure right and bottom are up-to-date.
+			data.rt, data.bot = data.lt + data.w, data.top + data.h
 
-		local dx = (mouseX - data.dragOX) - lt
-		local dy = (mouseY - data.dragOY) - top
+			local dx = (mouseX - dragStartOX) - data.lt
+			local dy = (mouseY - dragStartOY) - data.top
 
-		-- Move all edge positions by dx, dy.
-		lt, rt = lt + dx, rt + dx
-		top, bot = top + dy, bot + dy
+			-- Move all edge positions by dx, dy.
+			data.lt, data.rt = data.lt + dx, data.rt + dx
+			data.top, data.bot = data.top + dy, data.bot + dy
 
-		-- Figure snapping.
-		if not (bit.test(flags, snapModifierCode)) then
-			local snapD = _dragSnapDistance
-			-- Get snap for each new edge pos.
-			local _
-			_, snapD.lt = getSnap(lt, "x") -- `val` can be nil, `dist` is always a number.
-			_, snapD.rt = getSnap(rt, "x") -- Not actually using the value.
-			_, snapD.top = getSnap(top, "y")
-			_, snapD.bot = getSnap(bot, "y")
+			-- Figure snapping.
+			if not (bit.test(flags, snapModifierCode)) then
+				local snapD = _dragSnapDistance
+				-- Get snap for each new edge pos.
+				local _
+				_, snapD.lt = snap(data.lt, "x") -- `val` can be nil, `dist` is always a number.
+				_, snapD.rt = snap(data.rt, "x") -- Not actually using the value.
+				_, snapD.top = snap(data.top, "y")
+				_, snapD.bot = snap(data.bot, "y")
 
-			-- For each axis, get the closer snap, or nil if neither are in range.
-			snapX = "lt"
-			if snapD.rt < snapD.lt then  snapX = "rt"  end
-			if snapD[snapX] > snapDist then  snapX = nil  end
+				-- For each axis, get the closer snap, or nil if neither are in range.
+				snapX = "lt"
+				if snapD.rt < snapD.lt then  snapX = "rt"  end
+				if snapD[snapX] > snapDist then  snapX = nil  end
 
-			snapY = "top"
-			if snapD.bot < snapD.top then  snapY = "bot"  end
-			if snapD[snapY] > snapDist then  snapY = nil  end
+				snapY = "top"
+				if snapD.bot < snapD.top then  snapY = "bot"  end
+				if snapD[snapY] > snapDist then  snapY = nil  end
 
-			-- Add in the extra snap distance.
-			if snapX then  lt = lt + snapD[snapX] * SIDE_NORMAL_DIR[snapX]  end
-			if snapY then  top = top + snapD[snapY] * SIDE_NORMAL_DIR[snapY]  end
+				-- Add in the extra snap distance.
+				if snapX then  data.lt = data.lt + snapD[snapX] * SIDE_NORMAL_DIR[snapX]  end
+				if snapY then  data.top = data.top + snapD[snapY] * SIDE_NORMAL_DIR[snapY]  end
+			end
+			WindowPosition(winID, data.lt, data.top, 0, winData[winID].flags)
 		end
-
-		WindowPosition(winID, lt, top, 0, winData[winID].flags)
+	end
+	if data.callbacks.mainDrag then
+		data.callbacks.mainDrag(flags, hotspotID, hotspotName, winID)
 	end
 end
 
-function mouseUp(flags, hotspotID)
-	if bit.band (flags, miniwin.hotspot_got_rh_mouse) ~= 0 then
-		local winID, hotspotName = winIDFromHotspotID(hotspotID)
-		local x, y = WindowInfo(winID, 14), WindowInfo(winID, 15)
-		local i = WindowMenu(winID, x, y, winData[winID].menuString)
-		if i ~= "" then  menuResultHandler(winID, tonumber(i))  end
+function mainDragEnd(flags, hotspotID)
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if data.isDraggingWindow and bit.band(flags, miniwin.hotspot_got_lh_mouse) > 0 then
+		data.isDraggingWindow = nil
+	end
+	if data.callbacks.mainDragEnd then
+		data.callbacks.mainDragEnd(flags, hotspotID, hotspotName, winID)
 	end
 end
 
 -- Resize Handle Hotspot Callbacks:
 --------------------------------------------------
-
-function mouseHoverHandle(flags, hotspotID)
+function handleHover(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	if not winData[winID].locked then
-		local lt = WindowHotspotInfo(winID, hotspotID, 1)
-		local top = WindowHotspotInfo(winID, hotspotID, 2)
-		local rt = WindowHotspotInfo(winID, hotspotID, 3)
-		local bot = WindowHotspotInfo(winID, hotspotID, 4)
-		winData[winID].hoveredHandle = hotspotName
+	local data = winData[winID]
+	if not data.locked then
+		data.hoveredHandle = hotspotName
 		draw(winID)
+	end
+	if data.callbacks.handleHover then
+		data.callbacks.handleHover(flags, hotspotID, hotspotName, winID)
 	end
 end
 
-function mouseUnhoverHandle(flags, hotspotID)
+function handleUnhover(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
 	local data = winData[winID]
 	if data.hoveredHandle then
 		data.hoveredHandle = nil
 		draw(winID)
 	end
-end
-
-function mouseDownHandle(flags, hotspotID)
-	local winID, handleName = winIDFromHotspotID(hotspotID)
-	local data = winData[winID]
-	if not data.locked then
-		-- Get mouse pos.
-		local mouseX = WindowInfo(winID, 17)
-		local mouseY = WindowInfo(winID, 18)
-
-		-- Get current window rect.
-		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
-		local rt, bot = lt + w, top + h
-
-		-- Save mouse offset relative to moving edges.
-		data.dragOX, data.dragOY = 0, 0
-		local ax, ay = handleAxis[handleName].x, handleAxis[handleName].y
-		if ax == 1 then  data.dragOX = rt - mouseX
-		elseif ax == -1 then  data.dragOX = lt - mouseX  end
-		if ay == 1 then  data.dragOY = bot - mouseY
-		elseif ay == -1 then  data.dragOY = top - mouseY  end
-
-		updateSnapList()
+	if data.callbacks.handleUnhover then
+		data.callbacks.handleUnhover(flags, hotspotID, hotspotName, winID)
 	end
 end
 
-function mouseCancelDownHandle(flags, hotspotID)
-	mouseUnhoverHandle(flags, hotspotID)
-end
-
-local function moveEdge(edge, oppEdge, target, snap, axis, dir)
-	-- Set to target pos.
-	edge = target
-	-- Snap.
-	if snap then  edge = getSnap(edge, axis) or edge  end
-	-- Ensure minimum window size.
-	local clampFunc = dir == 1 and math.max or math.min
-	edge = clampFunc(edge, oppEdge + dir*windowMinSize)
-	return edge
-end
-
-function mouseDragHandle(flags, hotspotID)
-	local winID, handleName = winIDFromHotspotID(hotspotID)
-	local data = winData[winID]
-	local snapping = not (bit.test(flags, snapModifierCode))
-	if not data.locked then
-
-		local ax, ay = handleAxis[handleName].x, handleAxis[handleName].y
-
-		-- Get mouse pos and add drag offset.
-		local mouseX, mouseY = WindowInfo(winID, 17), WindowInfo(winID, 18) -- Get mouse coords.
-		local targetX, targetY = mouseX + data.dragOX, mouseY + data.dragOY
-
-		-- Get current window rect.
-		local w, h = WindowInfo(winID, 3), WindowInfo(winID, 4)
-		local lt, top = WindowInfo(winID, 10), WindowInfo(winID, 11)
-		local rt, bot = lt + w, top + h
-
-		-- Calculate new positions of appropriate edges.
-		if ax == 1 then  rt = moveEdge(rt, lt, targetX, snapping, "x", 1)
-		elseif ax == -1 then  lt = moveEdge(lt, rt, targetX, snapping, "x", -1)
-		end
-		if ay == 1 then  bot = moveEdge(bot, top, targetY, snapping, "y", 1)
-		elseif ay == -1 then  top = moveEdge(top, bot, targetY, snapping, "y", -1)
-		end
-
-		-- Update width & height
-		w = rt - lt
-		h = bot - top
-
-		WindowResize(winID, w, h, data.bgColor)
-		WindowPosition(winID, lt, top, 0, data.flags)
-		draw(winID)
-	end
-end
-
-function mouseDragHandleEnd(flags, hotspotID)
-	-- Only update hotspots on drag end.
-
+function handlePress(flags, hotspotID)
 	local winID, hotspotName = winIDFromHotspotID(hotspotID)
-	if not winData[winID].locked then
-		local width, height = WindowInfo(winID, 3), WindowInfo(winID, 4)
+	local data = winData[winID]
+	if data.callbacks.handlePress then
+		data.callbacks.handlePress(flags, hotspotID, hotspotName, winID)
+	end
+end
+
+function handleCancelPress(flags, hotspotID)
+	handleUnhover(flags, hotspotID)
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if data.callbacks.handleCancelPress then
+		data.callbacks.handleCancelPress(flags, hotspotID, hotspotName, winID)
+	end
+end
+
+function handleRelease(flags, hotspotID)
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if data.callbacks.handleRelease then
+		data.callbacks.handleRelease(flags, hotspotID, hotspotName, winID)
+	end
+end
+
+function handleDrag(flags, hotspotID)
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if not data.locked and bit.band(flags, miniwin.hotspot_got_lh_mouse) > 0 then
+		-- Get mouse pos.
+		local mouseX, mouseY = WindowInfo(winID, 17), WindowInfo(winID, 18)
+		-- Make sure right and bottom are up-to-date.
+		data.rt, data.bot = data.lt + data.w, data.top + data.h
+		local snapEnabled = not (bit.test(flags, snapModifierCode))
+
+		if not data.isDraggingHandle then -- Start drag
+			data.isDraggingHandle = true
+
+			local xDir, yDir = handleAxis[hotspotName].x, handleAxis[hotspotName].y
+
+			-- Save initial mouse offset relative to moving edge(s).
+			dragStartOX, dragStartOY = 0, 0
+			if xDir == 1 then  dragStartOX = data.rt - mouseX
+			elseif xDir == -1 then  dragStartOX = data.lt - mouseX
+			end
+			if yDir == 1 then  dragStartOY = data.bot - mouseY
+			elseif yDir == -1 then  dragStartOY = data.top - mouseY
+			end
+
+			updateSnapList()
+		else -- Drag update.
+			local targetX, targetY = mouseX + dragStartOX, mouseY + dragStartOY
+
+			if snapEnabled then
+				targetX, targetY = snap(targetX, "x"), snap(targetY, "y")
+			end
+			-- Calculate new positions of appropriate edges.
+			local xDir, yDir = handleAxis[hotspotName].x, handleAxis[hotspotName].y
+			if xDir == 1 then  data.rt = max(targetX, data.lt + windowMinSize)
+			elseif xDir == -1 then  data.lt = min(targetX, data.rt - windowMinSize)
+			end
+			if yDir == 1 then  data.bot = max(targetY, data.top + windowMinSize)
+			elseif yDir == -1 then  data.top = min(targetY, data.bot - windowMinSize)
+			end
+			-- Update width & height.
+			data.w, data.h = data.rt - data.lt, data.bot - data.top
+
+			WindowResize(winID, data.w, data.h, data.bgColor)
+			WindowPosition(winID, data.lt, data.top, 0, data.flags)
+			draw(winID)
+		end
+	end
+end
+
+function handleDragEnd(flags, hotspotID)
+	-- Only update hotspots on drag end.
+	local winID, hotspotName = winIDFromHotspotID(hotspotID)
+	local data = winData[winID]
+	if not data.locked and data.isDraggingHandle then
+		data.isDraggingHandle = false
+		local width, height = data.w, data.h--WindowInfo(winID, 3), WindowInfo(winID, 4)
 		local ew = edgeWidth
 
 		-- Resize handle hotspots.
@@ -492,11 +529,15 @@ function M.new(id, lt, top, width, height, z, align, flags, bgColor, visible, lo
 	bgColor = bgColor or RGBToInt()
 
 	-- Set win data.
-	local data = {flags = flags, bgColor = bgColor, locked = locked, drawCb = drawCb}
+	local data = {
+		flags = flags, bgColor = bgColor, locked = locked,
+		callbacks = {menu = menuCb, draw = drawCb}, hotspotIDs = {}
+	}
 	winData[id] = data
+	data.lt, data.top, data.w, data.h = lt, top, width, height
+	data.rt, data.bot = data.lt + data.w, data.top + data.h
 
 	-- Create menu.
-	data.menuCb = menuCb
 	data.menu = makeBaseMenu()
 	if locked then  data.menu[1] = "+" .. data.menu[1]  end
 	updateMenuActiveItems(id)
@@ -505,37 +546,45 @@ function M.new(id, lt, top, width, height, z, align, flags, bgColor, visible, lo
 	-- Create window.
 	WindowCreate(id, lt, top, width, height, align, flags, bgColor)
 	if visible then  WindowShow(id, true)  end
-	WindowRectOp(id, 1, 0, 0, width, height, normalBorderColor) -- Draw 1 pixel border.
+	WindowRectOp(id, 1, 0, 0, width, height, borderColor) -- Draw 1 pixel border.
 
 	-- Set draw order.
 	setZ(id, z)
 
 	-- Add main hotspot.
 	local mainHotspotID = makeHotspotID(id, "main")
+	data.hotspotIDs.main = mainHotspotID
 	WindowAddHotspot(
 		id, mainHotspotID,
 		edgeWidth, edgeWidth, width-edgeWidth, height-edgeWidth,
-		"mouseHover", "mouseUnhover", "mouseDown", nil, "mouseUp",
-		"", miniwin.cursor_hand, 0
+		"mainHover", "mainUnhover", "mainPress", "mainCancelPress", "mainRelease",
+		"", miniwin.cursor_arrow, 0
 	)
-	WindowDragHandler(id, mainHotspotID, "mouseDrag", "", 0)
+	WindowDragHandler(id, mainHotspotID, "mainDrag", "mainDragEnd", 0)
 
 	-- Add edge and corner hotspots.
 	for name,v in pairs(handleHotspotSpecs) do
 		local hotspotID = makeHotspotID(id, name)
+		data.hotspotIDs[name] = hotspotID
 		local lt, top, rt, bot = getHandleRect(name, width, height, edgeWidth)
 		WindowAddHotspot(
 			id, hotspotID, lt, top, rt, bot,
-			"mouseHoverHandle", "mouseUnhoverHandle", -- over, notOver
-			"mouseDownHandle", "mouseCancelDownHandle", nil, -- down, cancelDown, up
+			"handleHover", "handleUnhover",
+			"handlePress", "handleCancelPress", "handleRelease",
 			"", handleCursors[name], 0 -- Tooltip, cursor, flags
 		)
-		WindowDragHandler(id, hotspotID, "mouseDragHandle", "mouseDragHandleEnd", 0) -- winID, hotspotID, onMove, onRelease, flags
+		WindowDragHandler(id, hotspotID, "handleDrag", "handleDragEnd", 0) -- winID, hotspotID, onMove, onRelease, flags
 	end
 end
 
 function M.draw(winID) -- Allow plugins to trigger redraw on their windows.
 	draw(winID)
+end
+
+function M.addMenuItem(winID, str, func, arg1, arg2, arg3)
+	local data = winData[winID]
+	table.insert(data.menu, str)
+	data.menuResponses[#data.menu] = {func, arg1, arg2, arg3}
 end
 
 function M.addMenuItems(winID, startI, ...)
@@ -580,7 +629,7 @@ function M.checkMenuItem(winID, i, setChecked)
 		end
 		curChecked = (pf1 == "+" or pf2 == "+") and true or false
 	elseif prefixLength == 1 then -- Only one character prefix.
-		curChecked =( prefix == "+") and true or false
+		curChecked = (prefix == "+") and true or false
 		if not curChecked and prefix ~= "^" then
 			return -- Can't be checked.
 		end
@@ -611,6 +660,21 @@ function M.getRect(winID)
 	h = WindowInfo(winID, WIN_RECT_INFO_CODES.height)
 	z = WindowInfo(winID, WIN_RECT_INFO_CODES.z)
 	return x, y, w, h, z
+end
+
+function M.getSize(winID)
+	local w = WindowInfo(winID, WIN_RECT_INFO_CODES.width)
+	local h = WindowInfo(winID, WIN_RECT_INFO_CODES.height)
+	return w, h
+end
+
+function M.getHotspotID(winID, name)
+	return winData[winID].hotspotIDs[name]
+end
+
+function M.setCallback(winID, name, func)
+	local data = winData[winID]
+	data.callbacks[name] = func
 end
 
 return M
