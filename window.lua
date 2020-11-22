@@ -177,8 +177,8 @@ local function menuResultHandler(winID, i)
 		i = menuActiveIdxToFullIdx(winID, i) -- Convert index.
 		if i then
 			i = i - #baseMenu -- Send index after base menu. (the index among user-set items)
-			if data.callbacks.menu then
-				data.callbacks.menu(winID, i, prefix, item)
+			if data.callbacks.menuItemClicked then
+				data.callbacks.menuItemClicked(winID, i, prefix, item)
 			end
 		end
 	end
@@ -225,13 +225,11 @@ local function draw(winID)
 		WindowRectOp(winID, 2, lt, top, rt, bot, hoveredHandleColor)
 	end
 
-	-- Show window.
-	Redraw()
+	Redraw() -- Schedule window for redraw.
 end
 
 -- Snapping:
 --------------------------------------------------
-
 local snapList = { x = {}, y = {} }
 local WIN_RECT_INFO_CODES = {x = 10, y = 11, width = 3, height = 4, z = 22}
 local snapDist = 10
@@ -489,7 +487,11 @@ function handleDrag(flags, hotspotID)
 			elseif yDir == -1 then  data.top = min(targetY, data.bot - windowMinSize)
 			end
 			-- Update width & height.
+			local oldW, oldH = data.w, data.h
 			data.w, data.h = data.rt - data.lt, data.bot - data.top
+			if data.callbacks.sizeUpdated then
+				data.callbacks.sizeUpdated(winID, data.w, data.h, oldW, oldH)
+			end
 
 			WindowResize(winID, data.w, data.h, data.bgColor)
 			WindowPosition(winID, data.lt, data.top, 0, data.flags)
@@ -504,7 +506,7 @@ function handleDragEnd(flags, hotspotID)
 	local data = winData[winID]
 	if not data.locked and data.isDraggingHandle then
 		data.isDraggingHandle = false
-		local width, height = data.w, data.h--WindowInfo(winID, 3), WindowInfo(winID, 4)
+		local width, height = data.w, data.h
 		local ew = edgeWidth
 
 		-- Resize handle hotspots.
@@ -531,7 +533,7 @@ function M.new(id, lt, top, width, height, z, align, flags, bgColor, visible, lo
 	-- Set win data.
 	local data = {
 		flags = flags, bgColor = bgColor, locked = locked,
-		callbacks = {menu = menuCb, draw = drawCb}, hotspotIDs = {}
+		callbacks = {menuItemClicked = menuCb, draw = drawCb}, hotspotIDs = {}
 	}
 	winData[id] = data
 	data.lt, data.top, data.w, data.h = lt, top, width, height
@@ -672,6 +674,9 @@ function M.getHotspotID(winID, name)
 	return winData[winID].hotspotIDs[name]
 end
 
+-- Available callbacks: draw, sizeUpdated, menuItemClicked, mainHover,
+-- mainUnhover, mainPress, mainCancelPress, mainRelease, mainDrag, mainDragEnd,
+-- handleHover, handleUnhover, handlePress, handleCancelPress, handleRelease
 function M.setCallback(winID, name, func)
 	local data = winData[winID]
 	data.callbacks[name] = func
