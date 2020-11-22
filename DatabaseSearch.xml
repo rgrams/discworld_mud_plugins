@@ -235,7 +235,7 @@ local linkCmdFuncs = {} -- For aliases.
 linkCmdFuncs.room = { show = {jumpToRoomID, "room_id"}, route = {routeToRoomID, "room_id"} }
 linkCmdFuncs.shop = linkCmdFuncs.room
 linkCmdFuncs.npc = { details = {showNPCDetails, "npc_id"}, show = {jumpToRoomID, "room_id"}, route = {routeToRoomID, "room_id"} }
-linkCmdFuncs.item = { details = {showItemDetails, "item_name"}}
+linkCmdFuncs.item = { details = {showItemDetails, "item_name"}, show = {showItemDetails, "item_name"}}
 linkCmdFuncs.description = linkCmdFuncs.item
 linkCmdFuncs.appraise = linkCmdFuncs.item
 
