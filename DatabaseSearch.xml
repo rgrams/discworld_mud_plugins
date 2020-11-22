@@ -10,7 +10,7 @@
 	save_state="y"
 	date_written="2020-04-11 17:26:27"
 	requires="5.05"
-	version="1.0"
+	version="1.1"
 	>
 </plugin>
 
@@ -287,14 +287,14 @@ local searchData = {
 		msgDesc = "room",
 		selection = "*",
 		from = "rooms",
-		whereKey = "room_short",
+		columnToSearch = "room_short",
 		locationFilterAllowed = true,
 	},
 	npc = {
 		msgDesc = "NPC",
 		selection = "*",
 		from = "npc_info",
-		whereKey = "npc_name",
+		columnToSearch = "npc_name",
 		locationFilterAllowed = true,
 	},
 	shop = {
@@ -302,7 +302,7 @@ local searchData = {
 		selection = "shop_items.*, rooms.map_id, rooms.room_short",
 		from = "shop_items",
 		join = "INNER JOIN rooms on shop_items.room_id = rooms.room_id ",
-		whereKey = "item_name",
+		columnToSearch = "item_name",
 		locationFilterAllowed = true,
 		mapIDKey = "rooms.map_id",
 		-- altSortKeys = { ["$"] = "sale_price" }
@@ -311,20 +311,20 @@ local searchData = {
 		msgDesc = "item",
 		selection = "*",
 		from = "items",
-		whereKey = "item_name",
+		columnToSearch = "item_name",
 		-- altSortKeys = { ["$"] = "dollar_value", ["#"] = "weight" }
 	},
 	description = {
 		msgDesc = "item description",
 		selection = "*",
 		from = "items",
-		whereKey = "description"
+		columnToSearch = "description"
 	},
 	appraise = {
 		msgDesc = "item appraisal",
 		selection = "*",
 		from = "items",
-		whereKey = "appraise_text"
+		columnToSearch = "appraise_text"
 	},
 }
 
@@ -333,13 +333,12 @@ local sortDirs = { [""] = "ASC", ["+"] = "ASC", ["-"] = "DESC" }
 local baseSearchMsg = "Searching %s database for: '%s'."
 local baseOrderBy = "ORDER BY length(%s) ASC "
 local basePlaceCondition = " AND "
-local baseSearchSQL = "SELECT * FROM %s WHERE (%s LIKE %s%s) %sLIMIT %s"
 
 local SQLTemplate = {
 	"SELECT %s ", -- <selection>
 	"FROM %s ", -- <from>
 	"%s", -- <join>(for shop_items to get .map_id)
-	"WHERE (%s LIKE '%%%s%%'%s) ", -- <whereKey>, <searchText>, <locationCondition>(if present)
+	"WHERE (%s%s) ", -- <searchText word conditions>, <locationCondition>(if present)
 	"ORDER BY %s %s ", -- <sort> <sortDir>
 	"LIMIT %s" -- <maxResults + 1>
 }
@@ -350,7 +349,7 @@ local function makeSQLSort(data, sort)
 	if sort ~= "" and data.altSortKeys and data.altSortKeys[sort] then
 			return data.altSortKeys[sort]
 	else
-		return "length("..data.whereKey..")"
+		return "length("..data.columnToSearch..")"
 	end
 end
 
@@ -375,11 +374,18 @@ end
 
 local function makeSQL(data, searchText, location, sort, sortDir, startIdx)
 	searchText = escapeSQL(searchText)
-	-- <selection>, <from>, <join>, <whereKey>, <searchText>, <locationCondition>, <sort>, <sortDir>, <maxResults + 1>
+	-- Split search text into words an add a LIKE condition for each one.
+	local searchWords = {}
+	for word in searchText:gmatch("%w+") do
+		local condSQL = string.format("%s LIKE '%%%s%%'", data.columnToSearch, word)
+		table.insert(searchWords, condSQL)
+	end
+	searchText = table.concat(searchWords, " AND ")
+	-- <selection>, <from>, <join>, <columnToSearch>, <searchText>, <locationCondition>, <sort>, <sortDir>, <maxResults + 1>
 	local limit = maxResults + 1
 	if startIdx > 1 then  limit = limit.." OFFSET "..startIdx  end
 	local SQL = string.format(baseSearchSQL,
-		data.selection, data.from, data.join or "", data.whereKey, searchText,
+		data.selection, data.from, data.join or "", searchText,
 		makeSQLLocationCondition(data, location),
 		makeSQLSort(data, sort), sortDirs[sortDir] or "", limit
 	)
