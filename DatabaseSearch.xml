@@ -5,6 +5,7 @@
 <plugin
 	name="DatabaseSearch"
 	author="Ross Grams"
+	purpose="Better Quow database search."
 	id="0988f1630bed49c5690b56a3"
 	language="Lua"
 	save_state="y"
