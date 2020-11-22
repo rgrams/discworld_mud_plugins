@@ -614,7 +614,7 @@ end
 function setMaxResults(x)
 	x = tonumber(x)
 	if not x then
-		writeError("Invalid max results: '"..x.."'")
+		writeError("Invalid max results: '"..tostring(x).."'")
 	elseif x ~= maxResults then
 		maxResults = x
 		saveSettings()
