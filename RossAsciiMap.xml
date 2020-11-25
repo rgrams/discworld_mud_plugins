@@ -72,7 +72,7 @@ local function loadSettings()
 	for k,v in pairs(winRect) do
 		winRect[k] = tonumber(GetVariable("window_" .. k)) or v
 	end
-	local winLocked = toboolean(GetVariable("windowLocked"))
+	winLocked = toboolean(GetVariable("windowLocked"))
 end
 
 local function saveVar(name, val, nilVal)
@@ -84,6 +84,7 @@ local function saveSettings()
 	for k,v in pairs(winRect) do
 		saveVar("window_" .. k, v)
 	end
+	winLocked = window.getLocked(winID)
 	saveVar("windowLocked", winLocked)
 end
 
