@@ -1,0 +1,871 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+	name="tuppymap"
+	author="Ross Grams"
+	id="39a030d785ca6ae8add32d9c"
+	language="Lua"
+	save_state="y"
+	date_written="2020-04-09 09:27:25"
+	requires="5.05"
+	version="1.0"
+	>
+</plugin>
+
+<script>
+<![CDATA[
+
+require "json"
+
+local SELF_ID = GetPluginID()
+local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
+local quowMapPluginID = "bfe35205f026786ea1d56e3b"
+
+-- Get require path for modules - relative path from mushclient directory.
+local mushClientPath, pluginPath = GetInfo(66), GetPluginInfo(SELF_ID, 20)
+local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
+
+local mapsFolder = ""
+
+local RGBToInt = require(requirePath .. "RGBToInt")
+local window = require(requirePath .. "window")
+
+local winID = SELF_ID .. "tuppymap"
+local bufferID = SELF_ID .. "buffer"
+local winRect = {x = 800, y = 0, width = 200, height = 200, z = 0}
+local winLocked = false
+
+local MIDDLE_MOUSE_FLAG = 0x200
+local SCROLL_DOWN_FLAG = 0x100
+local zoomMult = 1.1
+
+-- Colors:
+--------------------------------------------------
+local backgroundColor = 0
+local actualPosColor = RGBToInt(255, 200, 0)
+local predictPosColor = RGBToInt(255, 0, 0)
+local whiteColor = RGBToInt(255)
+local borderColor = RGBToInt(50)
+local centerLineColor = RGBToInt(120)
+local drawCenterLines = true
+
+local messageColor = "darkorange"
+local punctColor = "gray"
+local warningColor = "red"
+--------------------------------------------------
+
+local mapDB
+local curMapID, curActualRoomID, predictedRoomID = nil, nil, nil
+local lastActualRoomID = nil
+local curImgX, curImgY = 0, 0
+local curImgW, curImgH = 1, 1
+local zoom = 1
+local brightness = 1
+
+local tx, ty = nil, nil
+local terrainGridSize = 103488
+local avgTerrainDiff = { x = 0, y = 0, count = 0 }
+
+local roomsByID = {}
+
+local loadedMaps = {}
+local fileNameKey, mapNameKey, gridXKey, gridYKey, cXKey, cYKey, mapShortKey = 1, 2, 3, 4, 5, 6, 7
+local mapsByID = require(requirePath .. "quowMapsByID")
+
+local toMoveDir = {
+	north = "n", south = "s", east = "e", west = "w",
+	northeast = "ne", southeast = "se", northwest = "nw", southwest = "sw",
+	n = "n", s = "s", e = "e", w = "w",
+	ne = "ne", se = "se", nw = "nw", sw = "sw",
+	up = "u", down = "d", u = "u", d = "d",
+	["enter stall"] = "enter stall",
+	leave = "leave", out = {"out", "leave"}, exit = {"exit", "out", "leave"},
+	left = "lt", right = "rt", backward = "bw", forward = "fw"
+}
+
+--[[ Map Database:
+	room_exits = { room_id, connect_id, exit (dir), guessed, items }
+	items = { item_name, description, appraise_text, weight, dollar_value, searchable, special_find_note }
+	shop_items = { room_id, item_name, sale_price }
+	npc_items = { npc_id, item_name, sale_price }
+	rooms = { room_id, map_id, xpos, ypos, room_short, room_type }
+	room_descriptions = { room_hash, room_id }
+	npc_info = { npc_id, map_id, npc_name, room_id }
+--]]
+
+-- Utility Functions:
+--------------------------------------------------
+local max, min = math.max, math.min
+local floor, ceil = math.floor, math.ceil
+
+local function clamp(x, min, max)
+	return x > min and (x < max and x or max) or min
+end
+
+local function round(x)
+	return floor(x + 0.5)
+end
+
+local function writeError(msg)
+	ColourTell(punctColor, 0, "[tuppymap]: ")
+	ColourNote(warningColor, 0, msg)
+end
+
+local function stringifyTable(t)
+	local s = "{ "
+	for k,v in pairs(t) do
+		s = s .. tostring(k) .. " = " .. tostring(v) .. ", "
+	end
+	return string.sub(s, 1, -3) .. " }"
+end
+
+local function rectsOverlap(lt1, top1, rt1, bot1, lt2, top2, rt2, bot2)
+	local xOverlap = (lt1 > lt2 and lt1 < rt2) or (rt1 > lt2 and rt1 < rt2)
+	local yOverlap = (top1 > top2 and top1 < bot2) or (bot1 > top2 and bot1 < bot2)
+	return xOverlap and yOverlap
+end
+
+-- Transform Functions:
+--------------------------------------------------
+-- Transform a window-local position to a map-image-local position.
+local function winPosToImgPos(winX, winY)
+	local imgX = (winX - curImgX) / zoom
+	local imgY = (winY - curImgY) / zoom
+	return imgX, imgY
+end
+
+local function imgPosToWinPos(imgX, imgY, isDelta)
+	imgX, imgY = imgX, imgY
+	if isDelta then
+		return imgX * zoom, imgY * zoom
+	else
+		return imgX * zoom + curImgX, imgY * zoom + curImgY
+	end
+end
+
+local function roomPosToWinPos(x, y, isDelta)
+	return imgPosToWinPos(x + 1.5, y + 1.5, isDelta)
+end
+
+-- Called from alias.
+function test(name, line, wildcards)
+	Note("ImgPos: ", curImgX, ", ", curImgY, ", TerrainPos: ", tx, ", ", ty)
+	local ix, iy = winPosToImgPos(winRect.width/2, winRect.height/2)
+	Note("I-Pos: ", ix, ", ", iy)
+end
+
+-- Called from alias.
+function clearPrediction(name, line, wildcards)
+	predictedRoomID = nil
+	jumpToRoomID(curActualRoomID)
+end
+
+local function getRoomMapID(roomID)
+	local roomData = roomsByID[roomID]
+	if roomData then  return roomData.map_id  end
+end
+
+function jumpToRoomID(roomID)
+	-- Note("jumpToRoomID ", roomID)
+	local roomData = roomsByID[roomID]
+	if not roomData then
+		writeError("jumpToRoomID - Unknown room id: '"..tostring(roomID).."'.")
+		return
+	end
+	setMap(roomData.map_id)
+	local winX, winY = roomPosToWinPos(roomData.xpos, roomData.ypos, true)
+	curImgX, curImgY = winRect.width/2 - winX, winRect.height/2 - winY
+	window.draw(winID)
+end
+
+function OnPluginSent(text)
+	text = string.lower(text)
+	text = string.match(text, "^%s*(.*%S)") or ""
+	local moveDir = toMoveDir[text]
+	if moveDir then
+		-- Note("  Move: " .. tostring(moveDir))
+		local curRoomID = predictedRoomID or curActualRoomID
+		if not curRoomID then  return  end
+		if not roomsByID[curRoomID] then
+			-- Note("Moved from unrecognized room!")
+			return
+		end
+		local roomExits = roomsByID[curRoomID].exits
+		local nextRoomID = roomExits[moveDir]
+		if not nextRoomID and type(moveDir) == "table" then -- Multiple ways to exit, like "leave"/"out".
+			for i,dir in ipairs(moveDir) do
+				if roomExits[dir] then
+					nextRoomID = roomExits[dir]
+					break
+				end
+			end
+		end
+		if nextRoomID then
+			-- Note("       To: " .. nextRoomID)
+			predictedRoomID = nextRoomID
+			jumpToRoomID(predictedRoomID)
+		end
+
+		--[[
+		local bFoundConnection = false
+		-- Look for where we're heading
+		if (sQuowExitsByExit[sFutureRoomID] ~= nil and sQuowExitsByExit[sFutureRoomID][sTemp] ~= nil) then
+			local sOldFutureID = sFutureRoomID
+			sFutureRoomID, bFoundConnection, iMyX, iMyY = sQuowExitsByExit[sFutureRoomID][sTemp], true, iOldMX, iOldMY
+			local futureRoomData = roomsByID[sFutureRoomID]
+			local iShiftX = futureRoomData[xKey] - roomsByID[sOldFutureID][xKey]
+			local iShiftY = futureRoomData[yKey] - roomsByID[sOldFutureID][yKey]
+			iCurMap = futureRoomData[mapIDKey]
+			sCurrentMap = sQuowMapfiles[iCurMap][1]
+			table.insert (iMapShiftQueue, {iShiftX, iShiftY, false, iCurMap})
+			iTimeSinceLastMove = OST()
+			RedrawMap()
+		end
+		-- No real room connection meant, so try a predictive move instead
+		if (bFoundConnection == false and (bPredictiveMoves == true or iCurMap == 8 or iCurMap == 47 or (iCurMap == 99 and bTerrainsTracking == true) or (sCurrentRoomID == "d67e7fc940fa14ae6356389ec1c96cc27ad81391" and sTemp == "n"))) then
+			MinimapHandleMovement(sTemp, true)
+		end
+		--]]
+	end
+end
+
+local wordToNum = {
+	one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7,
+	eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13
+}
+local dirVec = {
+	n = {x=0,y=1}, s = {x=0,y=-1}, e = {x=1,y=0}, w = {x=-1,y=0},
+	ne = {x=1,y=1}, se = {x=1,y=-1}, nw = {x=-1,y=1}, sw = {x=-1,y=-1},
+}
+
+local lastJourneyDX, lastJourneyDY
+local lastJourneyFromRoomID
+
+function journeyTrigger(name, line, wildcards)
+	local moves = {}
+	-- Convert string into list of short directions and number distances.
+	for dist,dir in string.gmatch(wildcards[1], "(%w+) miles? (%w+)") do
+		dir = toMoveDir[dir] or dir
+		dist = wordToNum[dist] or dist
+		-- Moves are consecutive, not cumulative, so can have duplicate directions.
+		-- Example: "one mile west, one mile northwest, six miles west, one mile northwest...""
+		if moves[dir] then  moves[dir] = moves[dir] + dist
+		else  moves[dir] = dist  end
+	end
+	-- Sum up x and y of each "move".
+	local dx, dy = 0, 0
+	for dir,dist in pairs(moves) do
+		local vec = dirVec[dir]
+		dx, dy = dx + vec.x * dist, dy + vec.y * dist
+	end
+	Note("Journeyed: ", dx, ", ", dy)
+	lastJourneyDX, lastJourneyDY = dx, dy
+	lastJourneyFromRoomID = curActualRoomID -- This is before the new GMCP packet arrives.
+end
+
+local function debugPrintExits(exits)
+	local exitStr = "  ["
+	for dir,id in pairs(exits) do
+		exitStr = exitStr .. dir .. ", "
+	end
+	if exitStr:len() > 3 then  exitStr = exitStr:sub(1, -3)  end
+	exitStr = exitStr .. "]"
+	Note(exitStr)
+end
+
+local function updateAvgTerrainDiff(x, y)
+	local ct = avgTerrainDiff.count
+	local totalX, totalY = avgTerrainDiff.x * ct, avgTerrainDiff.y * ct
+	totalX, totalY = totalX + x, totalY + y
+	ct = ct + 1
+	avgTerrainDiff.count = ct
+	avgTerrainDiff.x, avgTerrainDiff.y = totalX/ct, totalY/ct
+	Note("AvgTerrainDiff: (", avgTerrainDiff.x, ", ", avgTerrainDiff.y, ")")
+end
+
+local function tryToCenterTerrainMap()
+	-- local cx, cy = avgTerrainDiff.x, avgTerrainDiff.y
+	-- local cx, cy = 2840, 3639
+	local cx, cy = 2154, 3325
+	cx, cy = cx + tx/terrainGridSize, cy + ty/terrainGridSize
+	-- Pan so that cx, cy is in the center of the window.
+	local winX, winY = roomPosToWinPos(cx, cy, true)
+	curImgX, curImgY = winRect.width/2 - winX, winRect.height/2 - winY
+	-- TODO: add a panToCenter function?
+end
+
+-- room.info {"identifier":"931f05f0c972047a8da45430eb1ae271ee420aac",
+--            "tz":82942096,"name":"Ephebian desert","ty":126970316,
+--            "terrain":1,"visibility":1,"tx":-224244933,"kind":"outside"}
+-- room.info {"identifier":"931f05f0c972047a8da45430eb1ae271ee420aac",
+--            "tz":207282297,"name":"Ephebian desert","ty":2575565,
+--            "terrain":1,"visibility":1,"tx":-128439759,"kind":"outside"}
+
+function onGMCPReceived(name, dataStr)
+	local data = json.decode(dataStr)
+	if not data then  return  end
+	lastActualRoomID = curActualRoomID
+	curActualRoomID = data.identifier
+	if curActualRoomID == predictedRoomID then
+		predictedRoomID = nil
+	end
+	if data.terrain == 1 then
+		if not tx and not ty then  tx, ty = data.tx, data.ty  end
+	end
+
+	if mapDB then
+		local roomData = roomsByID[curActualRoomID]
+		if roomData then -- Exit is in database, easy-peasy.
+			debugPrintExits(roomData.exits)
+			if not predictedRoomID then  jumpToRoomID(curActualRoomID)
+			else  window.draw(winID)  end
+		else
+			if data.terrain == 1 then -- Wrassle with terrain GMCP data to place map.
+				if curMapID ~= 99 and roomsByID[lastActualRoomID] then -- Moved from known room into unknown terrain.
+					setMap(99)
+					tryToCenterTerrainMap()
+				end
+				local dx, dy = data.tx - tx, data.ty - ty
+				-- Note("Raw Terrain Pos: ", tx, ", ", ty)
+				local _x, _y = tx/terrainGridSize, ty/terrainGridSize
+				_x, _y = _x + avgTerrainDiff.x, _y + avgTerrainDiff.y
+				_x, _y = imgPosToWinPos(_x, _y)
+				-- Note("       Test Pos: ", _x, ", ", _y)
+				local milesDX, milesDY = dx / terrainGridSize, dy / terrainGridSize
+				if (math.abs(milesDX) + math.abs(milesDY)) > 22 then -- Impossible map shift, disregard coordinates.
+					milesDX, milesDY = 0, 0
+					if lastJourneyFromRoomID == lastActualRoomID then
+						milesDX, milesDY = lastJourneyDX, lastJourneyDY
+					end
+					-- ColourNote("red", "", "Direction Fail!  estimated: "..tostring(milesDX)..", "..tostring(milesDY))
+				end
+				-- Note("Miles delta: ", milesDX, ", ", milesDY)
+				milesDX, milesDY = clamp(milesDX, -11, 11), clamp(milesDY, -11, 11)
+				tx, ty = tx + dx, ty + dy
+				if curMapID == 99 then
+					local ix, iy = winPosToImgPos(winRect.width/2, winRect.height/2)
+					-- Note("I-Pos: ", ix, ", ", iy)
+					-- Note("ImgPos: ", curImgX, ", ", curImgY, ", TerrainPos: ", tx, ", ", ty)
+					local multX, multY = curImgX / tx / terrainGridSize, curImgY / ty / terrainGridSize
+
+					local subX, subY = ix - tx / terrainGridSize, iy - ty / terrainGridSize
+					-- Note("  ", subX, ", ", subY)
+					-- updateAvgTerrainDiff(subX, subY)
+					local panDX, panDY = imgPosToWinPos(milesDX, milesDY, true)
+					curImgX, curImgY = curImgX - panDX, curImgY + panDY -- Pan in opposite dir to position shift.
+					window.draw(winID)
+				end
+			end
+		end
+	end
+end
+
+function FollowHandler()
+end
+
+-- Clear any predicted-movement queues and map shifts
+function QuowClearQueues()
+	--[[
+	for sKey, sShiftData in ipairs(iMapShiftQueue) do
+		iMapShiftQueue[sKey] = nil
+	end
+	iMapShiftQueue = {}
+	if (roomsByID[sCurrentRoomID] ~= nil) then
+		sFutureRoomID = sCurrentRoomID
+		iMyX = roomsByID[sCurrentRoomID][2]
+		iMyY = roomsByID[sCurrentRoomID][3]
+		iOldMX = iMyX
+		iOldMY = iMyY
+		if (iCurMap ~= roomsByID[sCurrentRoomID][1]) then
+			iCurMap = roomsByID[sCurrentRoomID][1]
+			iOldMap = iCurMap
+			iCharLocMap = iCurMap
+			sCurrentMap = sQuowMapfiles[iCurMap][1]
+		end
+	end
+	--]]
+end
+
+-- Stopped/movement queue cleared
+function MovementQueueClear(name, line, wildcards)
+	-- QuowClearQueues()
+	-- RedrawMap()
+end
+
+-- Movement fail detected (impossible movement)
+function MovementFailure(name, line, wildcards)
+	--[[
+	sLastSentCommand = ""
+	-- Find the very first pixel-shift guess and remove it?
+	for iKey, sShiftData in ipairs(iMapShiftQueue) do
+		if (sShiftData[3] == true) then
+			local iBadShift = table.remove(iMapShiftQueue, iKey)
+			RedrawMap()
+			break
+		end
+	end
+	-- Library directional error reversing
+	if (iCurMap == 47 and sReverseMove[sLastDir] ~= nil) then
+		sLastDir = sOldDir
+		RedrawMap()
+	end
+	--]]
+end
+
+-- Movement blockage detected (valid movement, but something blocked us)
+function MovementBlockage(name, line, wildcards)
+	--[[
+	sLastSentCommand = ""
+	-- Find the very first pixel-shift guess and remove it?
+	if (#iMapShiftQueue > 0) then
+		local iBadShift = table.remove(iMapShiftQueue, iKey)
+		sFutureRoomID = sCurrentRoomID
+		RedrawMap()
+	end
+	--]]
+end
+
+-- Shape Drawing Helpers:
+--------------------------------------------------
+local CIRCLE_FILL_MODE = { fill = 0, line = 1 }
+local RECT_FILL_MODE = { line = 1, fill = 2 }
+
+-- Draw a circular line in a miniwindow from a center pos and a radius.
+local function drawCircle(winID, fillMode, x, y, r, color, lineWidth, lineStyle)
+	fillMode = CIRCLE_FILL_MODE[fillMode] or 1
+	color = color or whiteColor
+	lineWidth = lineWidth or 1
+	lineStyle = lineStyle or 0
+	local lt, top, rt, bot = x - r, y - r, x + r, y + r
+	local winW, winH = winRect.width, winRect.height
+	-- Shapes drawn outside of the window get messed up, so check AABB collision.
+	-- "round" circle bounds to the inside since they can be fractional.
+	if rectsOverlap(ceil(lt), ceil(top), floor(rt), floor(bot), 0, 0, winW, winH) then
+		WindowCircleOp(winID, 1, lt, top, rt, bot, color, lineStyle, lineWidth, color, fillMode)
+	end
+end
+
+local function drawSquare(winID, fillMode, x, y, r, color)
+	fillMode = RECT_FILL_MODE[fillMode] or 1
+	local lt, top, rt, bot = x - r, y - r, x + r, y + r
+	local winW, winH = winRect.width, winRect.height
+	if rectsOverlap(ceil(lt), ceil(top), floor(rt), floor(bot), 0, 0, winW, winH) then
+		WindowCircleOp(winID, 1, lt, top, rt, bot, color, lineStyle, lineWidth, color, fillMode)
+	end
+end
+
+local function drawRect(winID, fillMode, x, y, w, h, color)
+	fillMode = RECT_FILL_MODE[fillMode] or 1
+	color = color or whiteColor
+	local lt, top, rt, bot = x - w/2, y - h/2, x + w/2, y + h/2
+	local winW, winH = winRect.width, winRect.height
+	if rectsOverlap(ceil(lt), ceil(top), floor(rt), floor(bot), 0, 0, winW, winH) then
+		WindowCircleOp(winID, 1, lt, top, rt, bot, color, lineStyle, lineWidth, color, fillMode)
+	end
+end
+
+local function drawReticleAtRoomID(roomID, color, lineThickness)
+	roomData = roomsByID[roomID]
+	local x, y = roomData.xpos, roomData.ypos
+	x, y = roomPosToWinPos(x, y)
+	drawCircle(winID, "fill", x, y, 3*zoom, color)
+	drawCircle(winID, "line", x, y, 20, color, lineThickness or 2)
+end
+
+-- Window Drawing:
+--------------------------------------------------
+local function updateBuffer()
+	WindowResize(bufferID, curImgW, curImgH, backgroundColor)
+	WindowDrawImage(bufferID, curMapID, 0, 0, curImgW, curImgH, 2)
+	if brightness ~= 1 then
+		WindowFilter(bufferID, 0, 0, curImgW, curImgH, 21, brightness);
+	end
+	WindowImageFromWindow(winID, "map", bufferID)
+end
+
+local function loadMapImage(mapID)
+	-- Note("loadMapImage ", mapID)
+	loadedMaps[mapID] = true
+	WindowLoadImage(bufferID, mapID, mapsFolder .. mapsByID[mapID][fileNameKey])
+end
+
+function setMap(mapID)
+	if not mapsByID[mapID] then  Note("invalid map ID ", mapID) return  end
+	if not loadedMaps[mapID] then
+		loadMapImage(mapID)
+		-- curImgX, curImgY = 0, 0 -- Reset pan offset?
+		-- TODO: Set to Quow's center coordinates?
+	end
+	curMapID = mapID
+	curImgW = WindowImageInfo(bufferID, curMapID, 2)
+	curImgH = WindowImageInfo(bufferID, curMapID, 3)
+	updateBuffer()
+end
+
+local function setZoom(z, x, y)
+	if z < 1 then
+		z = round(z*20)/20
+	else
+		z = round(z*10)/10
+	end
+
+	if x and y then
+		local oldMapMX, oldMapMY = winPosToImgPos(x, y)
+		zoom = z
+		local newMapMX, newMapMY = winPosToImgPos(x, y)
+		local dx, dy = (newMapMX - oldMapMX)*zoom, (newMapMY - oldMapMY)*zoom
+		curImgX, curImgY = curImgX + dx, curImgY + dy
+	else
+		zoom = z
+	end
+	window.draw(winID)
+end
+
+local function drawWindow(winID, winW, winH)
+	WindowRectOp(winID, 2, 0, 0, winW, winH, backgroundColor) -- Draw background
+
+	-- Get window-local draw-to rect.
+	local lt, top = max(0, curImgX), max(0, curImgY)
+	local rt = min(winW, curImgX + curImgW * zoom)
+	local bot = min(winH, curImgY + curImgH * zoom)
+
+	-- Get image-local draw-from rect.
+	local srcLt, srcTop = winPosToImgPos(lt, top)
+	local srcRt, srcBot = winPosToImgPos(rt, bot)
+
+	-- Draw map image.
+	WindowDrawImage(winID, "map", lt, top, rt, bot, 2, srcLt, srcTop, srcRt, srcBot)
+
+	if drawCenterLines then
+		WindowLine(winID, winW/2, 0, winW/2, winH, centerLineColor, 2, 1)
+		WindowLine(winID, 0, winH/2, winW, winH/2, centerLineColor, 2, 1)
+	end
+
+	if curActualRoomID and getRoomMapID(curActualRoomID) == curMapID then
+		local color, lineThickness = actualPosColor, 1
+		if not predictedRoomID or predictedRoomID == curActualRoomID then
+			color = predictPosColor
+			lineThickness = 2
+		end
+		drawReticleAtRoomID(curActualRoomID, color, lineThickness)
+	end
+	if predictedRoomID and predictedRoomID ~= curActualRoomID then
+		if getRoomMapID(predictedRoomID) == curMapID then
+			drawReticleAtRoomID(predictedRoomID, predictPosColor)
+		end
+	end
+
+	-- Print zoom.
+	WindowRectOp(winID, 2, 3, 4, 34+2, 4+15, backgroundColor) -- Black rect behind text.
+	WindowText(winID, "font", tostring(zoom) .. "x", 3, 3, 0, 0, whiteColor)
+
+	WindowRectOp(winID, 1, 0, 0, winW, winH, borderColor) -- Draw border.
+end
+
+-- Callback from window module.
+local function winSizeUpdated(winID, newW, newH, oldW, oldH)
+	winRect.width, winRect.height = newW, newH
+	-- Update pan so the center of the window stays at the same point on the map.
+	local dx, dy = (newW - oldW)/2, (newH - oldH)/2
+	curImgX, curImgY = curImgX + dx, curImgY + dy
+	Repaint() -- Force screen redraw so it's smooth.
+end
+
+-- Mouse Functions:
+--------------------------------------------------
+local panStartX, panStartY
+
+function drag(flags, hotspotID, hotspotName, winID)
+	if bit.band(flags, MIDDLE_MOUSE_FLAG) > 0 then
+		if not panStartX then
+			panStartX = curImgX - WindowInfo(winID, 14)
+			panStartY = curImgY - WindowInfo(winID, 15)
+		else
+			local mX, mY = WindowInfo(winID, 14), WindowInfo(winID, 15)
+			curImgX, curImgY = panStartX + mX, panStartY + mY
+			window.draw(winID)
+			Repaint() -- Must force immediate redraw for smooth panning.
+		end
+	end
+end
+
+function dragEnd(flags, hotspotID, hotspotName, winID)
+	panStartX, panStartY = nil, nil
+end
+
+function scroll(flags, hotspotID)
+	local mx, my = WindowInfo(winID, 14), WindowInfo(winID, 15)
+
+	if bit.band(flags, SCROLL_DOWN_FLAG) > 0 then
+		setZoom(zoom / zoomMult, mx, my)
+	else
+		setZoom(zoom * zoomMult, mx, my)
+	end
+end
+
+-- Database Loading:
+--------------------------------------------------
+local requiredDBTables = { "room_exits", "items", "shop_items", "npc_items", "rooms", "npc_info" }
+
+-- Check if a database has all the required tables in it.
+local function validateDatabase(db, path)
+	local success, errMsg = pcall(db.nrows, db, "SELECT * FROM sqlite_master LIMIT 1;")
+	if not success then
+		writeError("The file: '"..path.."' is not a valid database.")
+		return false
+	end
+	local tables = {}
+	for row in db:nrows("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';") do
+		tables[row.name] = true
+	end
+	for i,tableName in ipairs(requiredDBTables) do
+		if not tables[tableName] then
+			if not suppressErr then
+				writeError("The database file: '"..path.."' does not contain the right data.")
+			end
+			return
+		end
+	end
+	return true
+end
+
+local function loadDatabase(path, suppressErr)
+	local file, errMsg = io.open(path, "r")
+	if file then
+		file:close()
+		local success, result = pcall(sqlite3.open, path)
+		mapDB = success and result or nil
+		if not mapDB then
+			if not suppressErr then
+				writeError("The file: '"..path.."' is not a database.")
+			end
+		else
+			local valid = validateDatabase(mapDB, path)
+			if not valid then
+				mapDB:close()
+				mapDB = nil
+			end
+		end
+	elseif not suppressErr then
+		writeError(errMsg)
+	end
+end
+
+function pickFileAndLoadDatabase()
+	local filePath = utils.filepicker("Locate Quow Map Database", nil, ".db", nil, false)
+	if filePath then
+		loadDatabase(filePath)
+	end
+	if mapDB then -- Enable aliases
+		setAliasesEnabled(true)
+		ColourTell(punctFGColor, punctBGColor, "[Database Search]: ")
+		ColourNote(resultFGColor, resultBGColor, "Successfully loaded database.")
+	end
+end
+
+-- Loading & Saving Settings:
+--------------------------------------------------
+local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
+	if v == nil then  return false
+	elseif v == false or v == "false" then  return false  end
+	return true -- Anything other than nil, false, or "false" ==> true.
+end
+
+local function loadSettings()
+	for k,v in pairs(winRect) do
+		winRect[k] = tonumber(GetVariable("window_" .. k)) or v
+	end
+	winLocked = toboolean(GetVariable("windowLocked"))
+	zoom = tonumber(GetVariable("zoom")) or zoom
+	curMapID = tonumber(GetVariable("curMapID")) or 1
+	curActualRoomID = GetVariable("curRoomID")
+	curImgX = tonumber(GetVariable("curImgX")) or 0
+	curImgY = tonumber(GetVariable("curImgY")) or 0
+	avgTerrainDiff.x = tonumber(GetVariable("avgTerrainDiffX")) or 0
+	avgTerrainDiff.y = tonumber(GetVariable("avgTerrainDiffY")) or 0
+	avgTerrainDiff.count = tonumber(GetVariable("avgTerrainDiffCount")) or 0
+end
+
+local function saveVar(name, val, nilVal)
+	if val == nil then  val = nilVal or false  end
+	SetVariable(name, tostring(val))
+end
+
+local function saveSettings()
+	for k,v in pairs(winRect) do
+		saveVar("window_" .. k, v)
+	end
+	saveVar("windowLocked", winLocked)
+	saveVar("zoom", zoom)
+	saveVar("curMapID", curMapID)
+	saveVar("curRoomID", curActualRoomID)
+	saveVar("curImgX", curImgX)
+	saveVar("curImgY", curImgY)
+	saveVar("avgTerrainDiffX", avgTerrainDiff.x)
+	saveVar("avgTerrainDiffY", avgTerrainDiff.y)
+	saveVar("avgTerrainDiffCount", avgTerrainDiff.count)
+end
+
+function OnPluginSaveState()
+	winRect.x, winRect.y, winRect.width, winRect.height, winRect.z = window.getRect(winID)
+	winLocked = window.getLocked(winID)
+	saveSettings()
+end
+
+-- Startup & Shutdown:
+--------------------------------------------------
+local function init()
+	CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived", "room.info")
+	loadSettings()
+
+	-- Load Quow's database.
+	local quowPluginFolder = GetPluginInfo(quowMapPluginID, 20)
+	if quowPluginFolder then
+		local quowMapsFolder = quowPluginFolder .. "maps\\"
+		mapsFolder = quowMapsFolder
+		local quowMapDatabasePath = quowPluginFolder .. "maps\\_quowmap_database.db"
+		loadDatabase(quowMapDatabasePath, true)
+	end
+	if not mapDB then -- In case of failure:
+		ColourNote(warningColor, nil, "tuppymap: Failed to automatically get database from Quow map.")
+		addLink("Click Here", "", SELF_ID, "pickFileAndLoadDatabase")
+		ColourNote(messageColor, nil, " to manually locate the '_quowmap_database.db' file. It was expected to be in the 'quow_plugins/maps' folder.")
+		setAliasesEnabled(false)
+	end
+	-- If database loaded: Copy room connections into a lua table for quick access.
+	if mapDB then
+		for roomData in mapDB:nrows("SELECT * FROM rooms") do
+			roomData.exits = {}
+			roomsByID[roomData.room_id] = roomData
+		end
+		for link in mapDB:nrows("SELECT room_id, connect_id, exit FROM room_exits") do
+			if roomsByID[link.room_id] and roomsByID[link.connect_id] then -- `connect_id` = room ID of connected room.
+				roomsByID[link.room_id].exits[link.exit] = link.connect_id -- `exit` = movement dir.
+			end
+		end
+	end
+
+	-- Create texture buffer "window".
+	WindowCreate(bufferID, 0, 0, winRect.width, winRect.height, 4, 2, backgroundColor)
+	-- Create visible window.
+	window.new(
+		winID, winRect.x, winRect.y, winRect.width, winRect.height, winRect.z,
+		nil, nil, nil, true, winLocked, nil, drawWindow
+	)
+	WindowFont(winID, "font", "", 10)
+	setMap(curMapID)
+	if curActualRoomID then
+		if roomsByID[curActualRoomID] then
+			jumpToRoomID(curActualRoomID)
+		end
+	end
+	window.draw(winID)
+	window.setCallback(winID, "sizeUpdated", winSizeUpdated)
+	window.setCallback(winID, "mainDrag", drag)
+	window.setCallback(winID, "mainDragEnd", dragEnd)
+	local mainHotspotID = window.getHotspotID(winID, "main")
+	WindowScrollwheelHandler(winID, mainHotspotID, "scroll");
+end
+
+local function final()
+	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.info")
+	if mapDB then
+		mapDB:close()
+	end
+	OnPluginSaveState()
+	WindowDelete(winID)
+	WindowDelete(bufferID)
+end
+
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final() end
+
+]]>
+</script>
+
+<!--  Triggers  -->
+<triggers>
+	<!-- Follow another player in a recognised direction -->
+	<trigger
+		enabled="y"
+		keep_evaluating="y"
+		match="^.* after having journeyed (.*)\.$"
+		regexp="y"
+		script="journeyTrigger"
+		name="journey"
+		sequence="100"
+		>
+	</trigger>
+	<trigger
+		enabled="n"
+		keep_evaluating="n"
+		match="^(?:> )?You (?:follow|pursue) [a-zA-Z](?:\w+\b\W*?){1,8} (north|northeast|east|southeast|south|southwest|west|northwest|left|right|forward|backward|up|down)\.$"
+		regexp="y"
+		script="FollowHandler"
+		name="FollowHandle"
+		sequence="10"
+		>
+	</trigger>
+	<!-- Movement is simply impossible in this direction -->
+	<trigger
+		enabled="n"
+		keep_evaluating="n"
+		match="^(?:> )?(?>What\?|That doesn't work\.|Try something else\.)$"
+		regexp="y"
+		script="MovementFailure"
+		name="MoveFail"
+		sequence="10"
+		>
+	</trigger>
+	<!-- Command queue cleared -->
+	<trigger
+		enabled="n"
+		keep_evaluating="n"
+		match="^(?:> )?(?>Removed queue\.|Thanks for playing\.  See you next time\.)$"
+		regexp="y"
+		script="MovementQueueClear"
+		name="MoveClear"
+		sequence="10"
+		>
+	</trigger>
+	<!-- Movement SHOULD be possible, but was intercepted by something -->
+	<trigger
+		enabled="n"
+		keep_evaluating="n"
+		match="^(?:> )?(?>The door swings shut in your face\.|The (?>north |northeast |east |southeast |south |southwest |west |northwest |warehouse )?(?>door|gate) is locked\.|(?>Free Sitting Birds|Nella|Jonas|Master Brimstone|Will|Thella|Nostos|Philip LeGrande) intercepts you\.|Try as you might, the sheep block any further progress south\.|(?:\w+\b\W*?){1,4} blocks the exit and prevents you from leaving (?>northeast|southeast|southwest|northwest|north|east|south|west)\.|That exit is creator-only for the moment\.|You do your best to get through the turnstiles, but the crowds are simply too thick and you make no headway\.  Better come back later, maybe they'll be more accessible then\.|A magic force prevents you from going that way\.|The bridge troll bars your way\.|The bridge troll is blocking the entire road very effectively, and you just can't sneak past him\.|The (?>north |northeast |east |southeast |south |southwest |west |northwest )?door slams shut in your face\.|Some unseen force grabs hold of you and pushes you back\.|Some sort of invisible field stops you from going that way at this point in time\.|A wooden barrier prevents your progress in this direction\.|A giant grabs you as you try to leave!|Four bandits leap out from hiding!|The (ceremonial)? (guard|sentry) blocks your way.|One of the guard thieves stops you from entering\.|A terrible sense of foreboding comes over you as you try to go .+\.|You need to climb in order to travel .+? from here\.|You just crawled\.  Give your arms a break!|You can't go that way - a vine trellis is totally blocking the path\.)$"
+		regexp="y"
+		script="MovementBlockage"
+		name="MoveBlock"
+		sequence="20"
+		>
+	</trigger>
+</triggers>
+
+<aliases>
+	<alias
+		match="^tuppymap test\s?(.*)$"
+		enabled="y"
+		regexp="y"
+		ignore_case="y"
+		sequence="20"
+		name="tuppymapTest"
+		script="test"
+		>
+	</alias>
+	<alias
+		match="^tuppymap reset$"
+		enabled="y"
+		regexp="y"
+		ignore_case="y"
+		sequence="20"
+		name="tuppymapReset"
+		script="clearPrediction"
+		>
+	</alias>
+</aliases>
+
+</muclient>
