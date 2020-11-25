@@ -156,11 +156,14 @@ end
 local function drawWindow()
 	winRect.width = WindowInfo(winID, 3)
 	winRect.height = WindowInfo(winID, 4)
+	WindowRectOp(winID, 2, 0, 0, winRect.width, winRect.height, 0) -- Clear/Fill Background
+	WindowRectOp(winID, 1, 0, 0, winRect.width, winRect.height, 12632256) -- Draw Border
 
 	local mapCenterX = (playerX - 0.5) * (fontCharWidth + charSpacing)
 	local mapCenterY = (playerY - 0.5) * (fontHeight + lineSpacing)
 
 	local x, y = winRect.width/2 - mapCenterX, winRect.height/2 - mapCenterY
+
 
 	local baseCol = colors.Normal
 	local col = baseCol

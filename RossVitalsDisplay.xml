@@ -97,6 +97,7 @@ local notifBracketColor = RGBToInt(190)
 
 local winPadding = 2 -- Padding between bars and edge of window
 local winBackgroundColor = RGBToInt(0, 0, 0)
+local winBorderColor = 12632256
 local barBackgroundColor = RGBToInt(35)
 local barFillColor = RGBToInt(225, 100, 25)
 local barBorderColor = RGBToInt(120)
@@ -336,9 +337,12 @@ local function calcFontSize(text, curFont, w, h)
 end
 
 local function draw()
-	local p = winPadding
-	local width, height = WindowInfo(winID, 3)-p*2, WindowInfo(winID, 4)-p*2
-	local i = 0
+	local width, height = window.getSize(winID)
+
+	WindowRectOp(winID, 2, 0, 0, width, height, winBackgroundColor)
+	WindowRectOp(winID, 1, 0, 0, width, height, winBorderColor)
+
+	width, height = width - winPadding * 2, height - winPadding * 2
 
 	-- Calculate a uniform label font size.
 	local font = lastFont or labelFonts[math.ceil(#labelFonts/2)]
@@ -349,6 +353,8 @@ local function draw()
 	font, maxLabelW = calcFontSize(longestLabelString, font, textW, textH)
 	lastFont = font
 
+	local i = 0
+	local p = winPadding
 	for _,stat in ipairs(ALL_INDIV_STATS) do
 		if showSettings[stat] then
 			-- Figure rect.
