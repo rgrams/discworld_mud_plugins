@@ -5,12 +5,13 @@
 <plugin
 	 name="RossAsciiMap"
 	 author="Ross Grams"
+	 purpose="ASCII-map miniwindow"
 	 id="4045bd321bb34f7bc51a3ce8"
 	 language="Lua"
 	 save_state="y"
 	 date_written="2019-02-22 13:38:17"
 	 requires="5.05"
-	 version="1.0"
+	 version="1.1"
 	 >
 </plugin>
 
@@ -36,7 +37,7 @@ end
 
 -- Settings:
 --------------------------------------------------
-local colors = {
+local ANSI_COLORS = {
 	Black = RGBToInt(),
 	Red = RGBToInt(255, 0, 0),
 	Green = RGBToInt(0, 255, 0),
@@ -61,10 +62,10 @@ local fontHeight
 local fontCharWidth
 
 local playerY, playerX = 1, 1
-local changeTable
 local mapLines = {}
-local regex = rex.new("MXP<(.+?)MXP>")
-local hexRegex = rex.new(".*? (#[0-9a-f]{6})")
+local colorChangesAt = {}
+local mxpColorRegex = rex.new("MXP<(.+?)MXP>")
+local hexRegex = rex.new(".*? (#[0-9a-f]{6})") -- MXP<C #ff8700MXP>
 
 -- Loading & Saving Settings:
 --------------------------------------------------
@@ -94,59 +95,78 @@ end
 
 -- GMCP Parsing:
 --------------------------------------------------
-local function nextColorMatch(regex, mapStr, startPos, changeTable, lineI)
-	local startI, endI, captures = regex:match(mapStr, startPos)
+local function processColorCodes(startPos, line, lineIdx)
+	-- Strip out color codes and record at which character index the color changes.
+	local startI, endI, captures = mxpColorRegex:match(line, startPos)
 	if endI then
-		local col = captures[1]
+		local color = captures[1]
 
-		if col == "Yellow" then -- This is the line the player is on.
-			playerX, playerY = startI, lineI
+		if color == "Yellow" then -- This is the line the player is on.
+			playerX, playerY = startI, lineIdx
 		end
 
-		-- Convert color string into an RGB value.
-		local s, e, hexCaptures = hexRegex:match(col)
-		if hexCaptures then  col = ColourNameToRGB(hexCaptures[1])
-		elseif colors[col] then  col = colors[col]
+		-- Convert color string into an integer RGB value.
+		if ANSI_COLORS[color] then
+			color = ANSI_COLORS[color]
 		else
-			Note("RossAsciiMap - Unrecognized color code: '", string.sub(mapStr, startI, endI), "'.")
-			col = colors.Normal
+			local _s, _e, hexCaptures = hexRegex:match(color)
+			if hexCaptures then
+				color = ColourNameToRGB(hexCaptures[1]) -- ColourNameToRGB will convert hex colors.
+			else
+				Note("RossAsciiMap - Unrecognized color code: '", string.sub(line, startI, endI), "'.")
+				color = ANSI_COLORS.Normal
+			end
 		end
-		changeTable[lineI] = changeTable[lineI] or {}
-		changeTable[lineI][startI] = col
+		colorChangesAt[lineIdx] = colorChangesAt[lineIdx] or {}
+		colorChangesAt[lineIdx][startI] = color
 
 		-- Cut color code chunk out of map string.
-		local pre = string.sub(mapStr, 1, startI - 1)
-		local post = string.sub(mapStr, endI + 1)
-		mapStr = pre .. post
+		local pre = string.sub(line, 1, startI - 1)
+		local post = string.sub(line, endI + 1)
+		line = pre .. post
 	end
 	-- We're removing everything from startI to endI, so our startI should
 	-- also be the start for the next match.
-	return startI, mapStr
+	return startI, line
 end
 
+--[[
+-- Output from MUD:
+"\u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z     \u001b[3z\u001b[4zMXP<RedMXP>+\u001b[3z   \n\u001b[3z\u001b[4zMXP<GreenMXP>&\u001b[3z-\u001b[3z\u001b[4zMXP<CyanMXP>*\u001b[3z-\u001b[3z\u001b[4zMXP<YellowMXP>@\u001b[3z-\u001b[3z\u001b[4zMXP<GreenMXP>$\u001b[3z   \n       \u001b[3z\\\u001b[3z  \n        \u001b[3z\u001b[4zMXP<CyanMXP>*\u001b[3z-\u001b[3z\n"
+-- Desired Result:
++     +
+&-*-@-$
+       \
+        *-
+--]]
+
 function onGMCPReceived(message, dataStr)
+	-- Map is colored with MXP color codes. First strip out the extra junk, then split into lines and process the color codes.
 	local map = dataStr
-	map = string.sub(map, 2) -- remove starting ".
+	map = string.sub(map, 2, -2) -- remove surrounding quotes ("").
 	map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
-	map = string.gsub(map, "MXP<[\\/]-send.-MXP>", "") -- remove MXP links, if any.
+	map = string.gsub(map, "MXP<[\\/]-send.-MXP>", "") -- remove MXP links, if any (not colors).
 	-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
 	map = string.gsub(map, "\\u001b%[3z", "MXP<NormalMXP>")
+	-- Un-escape actual map characters.
 	map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
 	map = string.gsub(map, "\\\/", "\/") -- change \/ to /.
 
-	changeTable = {}
+	for i=#mapLines,1,-1 do -- Clear old lists.
+		mapLines[i] = nil
+		colorChangesAt[i] = nil
+	end
 
-	for i=#mapLines,1,-1 do  mapLines[i] = nil  end
-	for line in string.gmatch(map, "(.-)\\n") do
+	for line in string.gmatch(map, "(.-)\\n") do -- Split map up into lines.
 		table.insert(mapLines, line)
 	end
 
-	for i,line in ipairs(mapLines) do
+	for lineIdx,line in ipairs(mapLines) do
 		local startPos = 1
 		while startPos do
-			startPos, line = nextColorMatch(regex, line, startPos, changeTable, i)
+			startPos, line = processColorCodes(startPos, line, lineIdx)
 		end
-		mapLines[i] = line
+		mapLines[lineIdx] = line -- Update line after stripping out color codes.
 	end
 	window.draw(winID)
 end
@@ -164,24 +184,23 @@ local function drawWindow()
 
 	local x, y = winRect.width/2 - mapCenterX, winRect.height/2 - mapCenterY
 
+	local baseCol = ANSI_COLORS.Normal
+	local color = baseCol
+	for lineIdx,line in ipairs(mapLines) do
+		local lx, ly = x, y + (lineIdx - 1)*(fontHeight + lineSpacing)
+		color = baseCol
 
-	local baseCol = colors.Normal
-	local col = baseCol
-	for li,line in ipairs(mapLines) do
-		local lx, ly = x, y + (li - 1)*(fontHeight + lineSpacing)
-		col = baseCol
-
-		for ci=1,string.len(line) do
-			if changeTable[li] and changeTable[li][ci] then
-				col = changeTable[li][ci]
-				if type(col) ~= "number" then
-					Note("RossAsciiMap - Weird color value in changeTable: ", changeTable[li][ci])
-					col = colors.Normal
+		for charIdx=1,string.len(line) do
+			if colorChangesAt[lineIdx] and colorChangesAt[lineIdx][charIdx] then
+				color = colorChangesAt[lineIdx][charIdx]
+				if type(color) ~= "number" then
+					Note("RossAsciiMap - Weird color value in colorChangesAt: ", colorChangesAt[lineIdx][charIdx])
+					color = ANSI_COLORS.Normal
 				end
 			end
-			local c = string.sub(line, ci, ci)
-			local ox = (ci - 1) * (fontCharWidth + charSpacing)
-			WindowText(winID, fontID, c, lx + ox, ly, 200, 200, col)
+			local char = string.sub(line, charIdx, charIdx)
+			local ox = (charIdx - 1) * (fontCharWidth + charSpacing)
+			WindowText(winID, fontID, char, lx + ox, ly, 200, 200, color)
 		end
 	end
 end
