@@ -199,8 +199,11 @@ local function drawWindow()
 				end
 			end
 			local char = string.sub(line, charIdx, charIdx)
-			local ox = (charIdx - 1) * (fontCharWidth + charSpacing)
-			WindowText(winID, fontID, char, lx + ox, ly, 200, 200, color)
+
+			if char ~= " " then
+				local ox = (charIdx - 1) * (fontCharWidth + charSpacing)
+				WindowText(winID, fontID, char, lx + ox, ly, 200, 200, color)
+			end
 		end
 	end
 end
