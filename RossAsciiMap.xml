@@ -28,6 +28,7 @@ local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
 
 local RGBToInt = require (requirePath .. "RGBToInt")
 local window = require (requirePath .. "window")
+local parseMDT = require(requirePath .. "MapDoorTextParser")
 
 local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
 	if v == nil then  return false
@@ -140,35 +141,60 @@ end
         *-
 --]]
 
+local curMDTData
+
+local function scoreMDTRooms(data)
+	for i,room in ipairs(data) do
+		room.score = #room.entities
+	end
+end
+
+-- Make a 2D array of room scores with relative coordinates from player.
+local function makeMDTArraymap(data)
+	local map = {}
+	for i,room in ipairs(data) do
+		local x, y = room.dx, room.dy
+		map[y] = map[y] or {}
+		map[y][x] = room.score or 1
+	end
+	data.scoreMap = map
+end
+
 function onGMCPReceived(message, dataStr)
-	-- Map is colored with MXP color codes. First strip out the extra junk, then split into lines and process the color codes.
-	local map = dataStr
-	map = string.sub(map, 2, -2) -- remove surrounding quotes ("").
-	map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
-	map = string.gsub(map, "MXP<[\\/]-send.-MXP>", "") -- remove MXP links, if any (not colors).
-	-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
-	map = string.gsub(map, "\\u001b%[3z", "MXP<NormalMXP>")
-	-- Un-escape actual map characters.
-	map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
-	map = string.gsub(map, "\\\/", "\/") -- change \/ to /.
+	if message == "room.writtenmap" then
+		curMDTData = parseMDT(dataStr)
+		scoreMDTRooms(curMDTData)
+		makeMDTArraymap(curMDTData)
+		window.draw(winID) -- writtenmap is sent second, so draw here.
+	elseif message == "room.map" then
+		-- Map is colored with MXP color codes. First strip out the extra junk, then split into lines and process the color codes.
+		local map = dataStr
+		map = string.sub(map, 2, -2) -- remove surrounding quotes ("").
+		map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
+		map = string.gsub(map, "MXP<[\\/]-send.-MXP>", "") -- remove MXP links, if any (not colors).
+		-- Replace ANSI reset code with a fake MXP color tag, which the next step will pick up.
+		map = string.gsub(map, "\\u001b%[3z", "MXP<NormalMXP>")
+		-- Un-escape actual map characters.
+		map = string.gsub(map, "\\\\", "\\") -- change \\ to \.
+		map = string.gsub(map, "\\\/", "\/") -- change \/ to /.
 
-	for i=#mapLines,1,-1 do -- Clear old lists.
-		mapLines[i] = nil
-		colorChangesAt[i] = nil
-	end
-
-	for line in string.gmatch(map, "(.-)\\n") do -- Split map up into lines.
-		table.insert(mapLines, line)
-	end
-
-	for lineIdx,line in ipairs(mapLines) do
-		local startPos = 1
-		while startPos do
-			startPos, line = processColorCodes(startPos, line, lineIdx)
+		for i=#mapLines,1,-1 do -- Clear old lists.
+			mapLines[i] = nil
+			colorChangesAt[i] = nil
 		end
-		mapLines[lineIdx] = line -- Update line after stripping out color codes.
+
+		for line in string.gmatch(map, "(.-)\\n") do -- Split map up into lines.
+			table.insert(mapLines, line)
+		end
+
+		for lineIdx,line in ipairs(mapLines) do
+			local startPos = 1
+			while startPos do
+				startPos, line = processColorCodes(startPos, line, lineIdx)
+			end
+			mapLines[lineIdx] = line -- Update line after stripping out color codes.
+		end
 	end
-	window.draw(winID)
 end
 
 -- Drawing:
@@ -179,15 +205,17 @@ local function drawWindow()
 	WindowRectOp(winID, 2, 0, 0, winRect.width, winRect.height, 0) -- Clear/Fill Background
 	WindowRectOp(winID, 1, 0, 0, winRect.width, winRect.height, 12632256) -- Draw Border
 
-	local mapCenterX = (playerX - 0.5) * (fontCharWidth + charSpacing)
-	local mapCenterY = (playerY - 0.5) * (fontHeight + lineSpacing)
+	local gridX, gridY = fontCharWidth + charSpacing, fontHeight + lineSpacing
 
-	local x, y = winRect.width/2 - mapCenterX, winRect.height/2 - mapCenterY
+	local mapHalfWidth = (playerX - 0.5) * gridX
+	local mapHalfHeight = (playerY - 0.5) * gridY
+
+	local ox, oy = winRect.width/2 - mapHalfWidth, winRect.height/2 - mapHalfHeight
 
 	local baseCol = ANSI_COLORS.Normal
 	local color = baseCol
 	for lineIdx,line in ipairs(mapLines) do
-		local lx, ly = x, y + (lineIdx - 1)*(fontHeight + lineSpacing)
+		local x, y = ox, oy + (lineIdx - 1)*gridY
 		color = baseCol
 
 		for charIdx=1,string.len(line) do
@@ -199,10 +227,22 @@ local function drawWindow()
 				end
 			end
 			local char = string.sub(line, charIdx, charIdx)
-
 			if char ~= " " then
-				local ox = (charIdx - 1) * (fontCharWidth + charSpacing)
-				WindowText(winID, fontID, char, lx + ox, ly, 200, 200, color)
+				WindowText(winID, fontID, char, x, y, x+gridX, y+gridY, color)
+			end
+			x = x + gridX
+		end
+	end
+
+	-- Draw room scores.
+	if curMDTData then
+		local ox, oy = winRect.width/2, winRect.height/2 -- Start from player pos, center of window.
+		for dy,row in pairs(curMDTData.scoreMap) do
+			for dx,score in pairs(row) do
+				-- Double dx and dy because rooms are every-other line on the ASCII map.
+				local x, y = ox + dx*2*gridX, oy - dy*2*gridY -- Subtract dy because we draw in +y = down coordinates.
+				x = x + 2
+				WindowText(winID, fontID, score, x, y, x+gridX, y+gridY, ANSI_COLORS.Red)
 			end
 		end
 	end
@@ -211,7 +251,7 @@ end
 -- Setup & Breakdown:
 --------------------------------------------------
 local function init()
-	CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived", "room.map")
+	CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived", "room.map", "room.writtenmap")
 	loadSettings()
 	window.new(
 		winID, winRect.x, winRect.y, winRect.width, winRect.height, winRect.z,
