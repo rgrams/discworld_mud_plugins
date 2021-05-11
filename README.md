@@ -92,7 +92,7 @@ A Lua module to help manage miniwindows inside the client window that plugins ca
 
 #### window Functions:
 
-**window.new(** winID, lt, top, width, height, z, [align], [flags], [bgColor], visible, [locked], [menuItemClickedCb], [drawCb] **)**
+**window.new(** winID, lt, top, width, height, z, [align], [flags], [bgColor], visible, [locked], [menuClickCb], [drawCb] **)**
 
 Create a new window.
 
