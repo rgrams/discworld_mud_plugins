@@ -63,7 +63,7 @@ local function init()
 end
 
 local function final()
-   CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map")
+   CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map", "room.writtenmap")
 end
 
 function OnPluginInstall()  init()  end
