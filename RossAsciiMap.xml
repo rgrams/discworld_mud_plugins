@@ -67,6 +67,7 @@ local mapLines = {}
 local colorChangesAt = {}
 local mxpColorRegex = rex.new("MXP<(.+?)MXP>")
 local hexRegex = rex.new(".*? (#[0-9a-f]{6})") -- MXP<C #ff8700MXP>
+local lastPacket -- Save last raw packet string to disk so we can show something on load.
 
 -- Loading & Saving Settings:
 --------------------------------------------------
@@ -75,6 +76,8 @@ local function loadSettings()
 		winRect[k] = tonumber(GetVariable("window_" .. k)) or v
 	end
 	winLocked = toboolean(GetVariable("windowLocked"))
+	lastPacket = GetVariable("lastPacket")
+	if lastPacket == "" then  lastPacket = nil  end
 end
 
 local function saveVar(name, val, nilVal)
@@ -88,6 +91,7 @@ local function saveSettings()
 	end
 	winLocked = window.getLocked(winID)
 	saveVar("windowLocked", winLocked)
+	if lastPacket then  saveVar("lastPacket", lastPacket)  end
 end
 
 function OnPluginSaveState()
@@ -176,6 +180,7 @@ function onGMCPReceived(message, dataStr)
 		window.draw(winID) -- writtenmap is sent second, so draw here.
 	elseif message == "room.map" then
 		-- Map is colored with MXP color codes. First strip out the extra junk, then split into lines and process the color codes.
+		lastPacket = dataStr
 		local map = dataStr
 		map = string.sub(map, 2, -2) -- remove surrounding quotes ("").
 		map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
@@ -268,6 +273,7 @@ local function init()
 	WindowFont(winID, fontID, font, fontSize, nil, nil, nil, nil, 0)
 	fontHeight = WindowFontInfo(winID, fontID, 1)
 	fontCharWidth = WindowFontInfo(winID, fontID, 6) -- Average character width.
+	if lastPacket then  onGMCPReceived("room.map", lastPacket)  end
 	window.draw(winID)
 end
 
