@@ -42,10 +42,35 @@ Plugins and Lua modules that handle features that might otherwise be duplicated 
 ## GMCP Interface
 A mostly-generic GMCP handler & subscription interface for other plugins. It enables and handles all the GMCP packet types that the Discworld MUD uses, and sends each one out to any plugins that requested it.
 
-* Use the "gmcpdebug <mode> <packetNameFilter>" command to debug on the fly.
+* Use the "`gmcpdebug <mode> <packetNameFilter>`" command to debug on the fly.
+   * mode: 0 (disabled), 1 (brief, only packet name), or 2 (verbose, full packet text)
+   * packetNameFilter (optional): For checking a single packet type. Ex: "room.info".
 * Other plugins call "subscribe" with their plugin ID and a callback name to get GMCP packets.
 * Other plugins can call "unsubscribe" to stop recieving certain packets
    * If a subscribed plugin is disabled or removed, it will be automatically unsubscribed.
+
+_Example Usage:_
+```lua
+local SELF_ID = GetPluginID()
+local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
+
+function onGMCPReceived(packetName, dataStr)
+   -- Do stuff with packet...
+end
+
+local function init()
+   CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived", "room.map", "room.writtenmap")
+end
+
+local function final()
+   CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map")
+end
+
+function OnPluginInstall()  init()  end
+function OnPluginEnable()  init()  end
+function OnPluginClose()  final()  end
+function OnPluginDisable()  final() end
+```
 
 ## Plugin Reloader
 A tiny plugin for reloading other plugins by typing a command or pressing a hotkey combination.
@@ -65,6 +90,71 @@ A Lua module to help manage miniwindows inside the client window that plugins ca
    * A few ways to change the window draw-order (whether it's above or below other windows).
 * A callback and some helper functions to make it much easier to deal with right-click menus.
 
+#### window Functions:
+
+**window.new(** winID, lt, top, width, height, z, [align], [flags], [bgColor], visible, [locked], [menuItemClickedCb], [drawCb] **)**
+
+Create a new window.
+
+**window.draw(** winID **)**
+
+Redraw the window.
+
+**window.addMenuItems(** winID, [startI],  **...)**
+
+Give any number of strings to add to the right-click menu (after the default menu items). `startI` is optional, pass in a number greater than 1 to insert the new menu items further down the menu.
+
+For Reference: https://www.gammon.com.au/scripts/doc.php?function=WindowMenu
+
+_Special Starting Characters Quick-Ref:_
+* "-" - Separator line.
+* "^" - Disabled / grayed out.
+* "+" - Checked (by default all items have no check-mark).
+* ">" - Start nested menu with title.
+* "<" - End nested menu (other characters ignored).
+
+**window.setMenuItem(** winID, i, item **)**
+
+Set the text of a menu item
+
+**window.checkMenuItem(** winID, i, setChecked **)**
+
+Set a menu item checked or un-checked. You could also do this yourself by using window.setMenuItem() to add or remove the leading "+".
+
+**window.getLocked(** winID **)**
+
+Check if the window is locked or not (if it's draggable/resizeable).
+
+**window.getRect(** winID **)**
+
+Returns x, y, width, height, z.
+
+**window.getSize(** winID **)**
+
+Return width, height.
+
+**window.getHotspotID(** winID, name **)**
+
+Gets the full hotspot ID for the named hotspot. Each window has hotspots with the following names: "main" (the interior of the window), and "lt", "rt", "top", "bot", "ltTop", "rtTop", "ltBot", and "rtBot" (the resize hanlde hotspots).
+
+**window.setCallback(** winID, name, func **)**
+
+_Available callbacks:_
+* `draw(winID, w, h)`
+* `sizeUpdated(winID, newW, newH, oldW, oldH)`
+* `menuItemClicked(winID, i, prefix, item)`
+* `mainHover(flags, hotspotID, hotspotName, winID)`
+* `mainUnhover(flags, hotspotID, hotspotName, winID)`
+* `mainPress(flags, hotspotID, hotspotName, winID)`
+* `mainCancelPress(flags, hotspotID, hotspotName, winID)`
+* `mainRelease(flags, hotspotID, hotspotName, winID)`
+* `mainDrag(flags, hotspotID, hotspotName, winID)`
+* `mainDragEnd(flags, hotspotID, hotspotName, winID)`
+* `handleHover(flags, hotspotID, hotspotName, winID)`
+* `handleUnhover(flags, hotspotID, hotspotName, winID)`
+* `handlePress(flags, hotspotID, hotspotName, winID)`
+* `handleCancelPress(flags, hotspotID, hotspotName, winID)`
+* `handleRelease(flags, hotspotID, hotspotName, winID)`
 
 ## RGBToInt
 A tiny module--only one function--to convert three 0-255 RGB into a single integer color.
