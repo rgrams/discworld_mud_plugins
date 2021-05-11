@@ -32,17 +32,22 @@ local parseMDT = require(requirePath .. "MapDoorTextParser")
 
 -- Settings:
 --------------------------------------------------
-local ANSI_COLORS = {
-	Black = RGBToInt(),
+local COLORS = {
+	background = 0,
+	border = 12632256,
+	Normal = RGBToInt(192),
+	Yellow = RGBToInt(255, 255, 0),
 	Red = RGBToInt(255, 0, 0),
 	Green = RGBToInt(0, 255, 0),
-	Yellow = RGBToInt(255, 255, 0),
+	Cyan = RGBToInt(0, 255, 255),
 	Blue = RGBToInt(0, 0, 255),
 	Magenta = RGBToInt(255, 0, 255),
-	Cyan = RGBToInt(0, 255, 255),
 	White = RGBToInt(255),
-	Normal = RGBToInt(192)
+	Black = RGBToInt(),
+	Desert = 34815,
 }
+local DEFAULT_COLORS = {}
+for k,v in pairs(COLORS) do  DEFAULT_COLORS[k] = v  end
 local fontFamily = "fixedsys"
 local fontSize = 9 -- NOTE: FixedSys only comes in this size.
 local lineSpacing = 0
@@ -87,6 +92,9 @@ local function loadSettings()
 	lastPacket = loadVar("lastPacket")
 	fontFamily = loadVar("fontFamily") or fontFamily
 	fontSize = loadVar("fontSize") or fontSize
+	for colorName in pairs(COLORS) do
+		COLORS[colorName] = tonumber(loadVar("color_" .. colorName)) or DEFAULT_COLORS[colorName]
+	end
 end
 
 local function saveVar(name, val, nilVal)
@@ -103,6 +111,9 @@ local function saveSettings()
 	if lastPacket then  saveVar("lastPacket", lastPacket)  end
 	saveVar("fontFamily", fontFamily, "fixedsys")
 	saveVar("fontSize", fontSize, 9)
+	for colorName in pairs(COLORS) do
+		saveVar("color_" .. colorName, COLORS[colorName])
+	end
 end
 
 function OnPluginSaveState()
@@ -111,18 +122,62 @@ end
 
 -- Right-Click Menu Handling:
 --------------------------------------------------
-local menuItemList = {
-	"Set font..."
-}
+local function pickFont()
+	local fnt = utils.fontpicker(fontFamily, fontSize)
+	if fnt then
+		fontFamily, fontSize = fnt.name, fnt.size
+		loadFont(winID, fontID, fontFamily, fontSize)
+		window.draw(winID)
+	end
+end
 
-local function menuItemClicked(winID, i, prefix, item)
-	if item == "Set font..." then
-		local fnt = utils.fontpicker(fontFamily, fontSize)
-		if fnt then
-			fontFamily, fontSize = fnt.name, fnt.size
-			loadFont(winID, fontID, fontFamily, fontSize)
+local function pickColor(colorName)
+	local result = PickColour(COLORS[colorName])
+	if result ~= -1 then
+		COLORS[colorName] = result
+		if lastPacket then
+			onGMCPReceived("room.map", lastPacket)
 			window.draw(winID)
 		end
+	end
+end
+
+local function resetColorToDefault(colorName)
+	COLORS[colorName] = DEFAULT_COLORS[colorName]
+	if lastPacket then
+		onGMCPReceived("room.map", lastPacket)
+		window.draw(winID)
+	end
+end
+
+local menuItems = {}
+
+local function menuItem(text, fn, ...)
+	table.insert(menuItems, {text, fn, ...})
+end
+
+menuItem("Set font...", pickFont)
+local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White", "Black"}
+menuItem(">Colors:")
+menuItem(">defaults:")
+for i,colorName in ipairs(colorNames) do
+	menuItem("Reset "..colorName.." to default", resetColorToDefault, colorName)
+end
+menuItem("<")
+menuItem("-")
+for i,colorName in ipairs(colorNames) do
+	menuItem("Set "..colorName.." color...", pickColor, colorName)
+end
+menuItem("<")
+
+local menuItemList = {} -- List of button texts for adding to window.
+for i,v in ipairs(menuItems) do  table.insert(menuItemList, v[1])  end
+
+local function menuItemClicked(winID, i, prefix, item)
+	local data = menuItems[i]
+	if data then
+		local fn = data[2]
+		fn(unpack(data, 3))
 	end
 end
 
@@ -132,26 +187,32 @@ local function processColorCodes(startPos, line, lineIdx)
 	-- Strip out color codes and record at which character index the color changes.
 	local startI, endI, captures = mxpColorRegex:match(line, startPos)
 	if endI then
-		local color = captures[1]
+		local colorName = captures[1]
 
-		if color == "Yellow" then -- This is the line the player is on.
+		if colorName == "Yellow" then -- This is the line the player is on.
 			playerX, playerY = startI, lineIdx
 		end
 
 		-- Convert color string into an integer RGB value.
-		if ANSI_COLORS[color] then
-			color = ANSI_COLORS[color]
+		local colorInt
+		if COLORS[colorName] then
+			colorInt = COLORS[colorName]
 		else
-			local _s, _e, hexCaptures = hexRegex:match(color)
+			local _s, _e, hexCaptures = hexRegex:match(colorName)
 			if hexCaptures then
-				color = ColourNameToRGB(hexCaptures[1]) -- ColourNameToRGB will convert hex colors.
+				if hexCaptures[1] == "#ff8700" then
+					colorName = "Desert"
+					colorInt = COLORS[colorName]
+				else
+					colorInt = ColourNameToRGB(hexCaptures[1]) -- ColourNameToRGB will convert hex colors.
+				end
 			else
 				Note("RossAsciiMap - Unrecognized color code: '", string.sub(line, startI, endI), "'.")
-				color = ANSI_COLORS.Normal
+				colorInt = COLORS.Normal
 			end
 		end
 		colorChangesAt[lineIdx] = colorChangesAt[lineIdx] or {}
-		colorChangesAt[lineIdx][startI] = color
+		colorChangesAt[lineIdx][startI] = colorInt
 
 		-- Cut color code chunk out of map string.
 		local pre = string.sub(line, 1, startI - 1)
@@ -243,8 +304,8 @@ end
 local function drawWindow()
 	winRect.width = WindowInfo(winID, 3)
 	winRect.height = WindowInfo(winID, 4)
-	WindowRectOp(winID, 2, 0, 0, winRect.width, winRect.height, 0) -- Clear/Fill Background
-	WindowRectOp(winID, 1, 0, 0, winRect.width, winRect.height, 12632256) -- Draw Border
+	WindowRectOp(winID, 2, 0, 0, winRect.width, winRect.height, COLORS.background) -- Clear/Fill Background
+	WindowRectOp(winID, 1, 0, 0, winRect.width, winRect.height, COLORS.border) -- Draw Border
 
 	local gridX, gridY = fontCharWidth + charSpacing, fontHeight + lineSpacing
 
@@ -253,7 +314,7 @@ local function drawWindow()
 
 	local ox, oy = winRect.width/2 - mapHalfWidth, winRect.height/2 - mapHalfHeight
 
-	local baseCol = ANSI_COLORS.Normal
+	local baseCol = COLORS.Normal
 	local color = baseCol
 	for lineIdx,line in ipairs(mapLines) do
 		local x, y = ox, oy + (lineIdx - 1)*gridY
@@ -264,7 +325,7 @@ local function drawWindow()
 				color = colorChangesAt[lineIdx][charIdx]
 				if type(color) ~= "number" then
 					Note("RossAsciiMap - Weird color value in colorChangesAt: ", colorChangesAt[lineIdx][charIdx])
-					color = ANSI_COLORS.Normal
+					color = COLORS.Normal
 				end
 			end
 			local char = string.sub(line, charIdx, charIdx)
@@ -283,7 +344,7 @@ local function drawWindow()
 				-- Double dx and dy because rooms are every-other line on the ASCII map.
 				local x, y = ox + dx*2*gridX, oy - dy*2*gridY -- Subtract dy because we draw in +y = down coordinates.
 				x = x + 2
-				WindowText(winID, fontID, score, x, y, x+fontMaxCharWidth, y+gridY, ANSI_COLORS.Red)
+				WindowText(winID, fontID, score, x, y, x+fontMaxCharWidth, y+gridY, COLORS.Red)
 			end
 		end
 	end
