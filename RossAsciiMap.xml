@@ -143,9 +143,17 @@ end
 
 local curMDTData
 
+local getCountRegex = rex.new("^(\\d+)")
+
 local function scoreMDTRooms(data)
 	for i,room in ipairs(data) do
-		room.score = #room.entities
+		local score = 0
+		for i,entStr in ipairs(room.entities) do
+			local _, _, capt = getCountRegex:match(entStr)
+			local count = capt and capt[1] or 1
+			score = score + count
+		end
+		room.score = score
 	end
 end
 
