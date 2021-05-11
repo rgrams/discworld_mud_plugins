@@ -30,12 +30,6 @@ local RGBToInt = require (requirePath .. "RGBToInt")
 local window = require (requirePath .. "window")
 local parseMDT = require(requirePath .. "MapDoorTextParser")
 
-local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
-	if v == nil then  return false
-	elseif v == false or v == "false" then  return false  end
-	return true -- Anything other than nil, false, or "false" ==> true.
-end
-
 -- Settings:
 --------------------------------------------------
 local ANSI_COLORS = {
@@ -50,7 +44,7 @@ local ANSI_COLORS = {
 	Normal = RGBToInt(192)
 }
 local fontFamily = "fixedsys"
-local fontSize = 10 -- NOTE: Fixedsys doesn't go any smaller than this.
+local fontSize = 9 -- NOTE: FixedSys only comes in this size.
 local lineSpacing = 0
 local charSpacing = 0
 
@@ -62,6 +56,7 @@ local fontID = "font" -- Not the font name, just the ID it's registered to for o
 local fontHeight
 local fontCharWidth
 local fontMaxCharWidth -- For the rect to draw each character within.
+local loadFont -- Upvalue for function.
 
 local playerY, playerX = 1, 1
 local mapLines = {}
@@ -72,13 +67,26 @@ local lastPacket -- Save last raw packet string to disk so we can show something
 
 -- Loading & Saving Settings:
 --------------------------------------------------
+local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
+	if v == nil then  return false
+	elseif v == false or v == "false" then  return false  end
+	return true -- Anything other than nil, false, or "false" ==> true.
+end
+
+local function loadVar(name) -- Returns nil instead of an empty string.
+	local v = GetVariable(name)
+	if v == "" then  return nil  end
+	return v
+end
+
 local function loadSettings()
 	for k,v in pairs(winRect) do
 		winRect[k] = tonumber(GetVariable("window_" .. k)) or v
 	end
 	winLocked = toboolean(GetVariable("windowLocked"))
-	lastPacket = GetVariable("lastPacket")
-	if lastPacket == "" then  lastPacket = nil  end
+	lastPacket = loadVar("lastPacket")
+	fontFamily = loadVar("fontFamily") or fontFamily
+	fontSize = loadVar("fontSize") or fontSize
 end
 
 local function saveVar(name, val, nilVal)
@@ -93,10 +101,29 @@ local function saveSettings()
 	winLocked = window.getLocked(winID)
 	saveVar("windowLocked", winLocked)
 	if lastPacket then  saveVar("lastPacket", lastPacket)  end
+	saveVar("fontFamily", fontFamily, "fixedsys")
+	saveVar("fontSize", fontSize, 9)
 end
 
 function OnPluginSaveState()
 	saveSettings()
+end
+
+-- Right-Click Menu Handling:
+--------------------------------------------------
+local menuItemList = {
+	"Set font..."
+}
+
+local function menuItemClicked(winID, i, prefix, item)
+	if item == "Set font..." then
+		local fnt = utils.fontpicker(fontFamily, fontSize)
+		if fnt then
+			fontFamily, fontSize = fnt.name, fnt.size
+			loadFont(winID, fontID, fontFamily, fontSize)
+			window.draw(winID)
+		end
+	end
 end
 
 -- GMCP Parsing:
@@ -264,18 +291,23 @@ end
 
 -- Setup & Breakdown:
 --------------------------------------------------
+function loadFont(winID, fontID, fontFamily, fontSize) -- Is local--upvalue defined above.
+	WindowFont(winID, fontID, fontFamily, fontSize, nil, nil, nil, nil, 0)
+	fontHeight = WindowFontInfo(winID, fontID, 1)
+	fontCharWidth = WindowFontInfo(winID, fontID, 6) -- Average character width.
+	fontMaxCharWidth = WindowFontInfo(winID, fontID, 7) -- Max character width.
+end
+
 local function init()
 	CallPlugin(GMCP_INTERFACE_ID, "subscribe", SELF_ID, "onGMCPReceived", "room.map", "room.writtenmap")
 	loadSettings()
 	window.new(
 		winID, winRect.x, winRect.y, winRect.width, winRect.height, winRect.z,
-		nil, nil, nil, true, winLocked, nil, drawWindow
+		nil, nil, nil, true, winLocked, menuItemClicked, drawWindow
 	)
-	WindowFont(winID, fontID, fontFamily, fontSize, nil, nil, nil, nil, 0)
-	fontHeight = WindowFontInfo(winID, fontID, 1)
-	fontCharWidth = WindowFontInfo(winID, fontID, 6) -- Average character width.
-	fontMaxCharWidth = WindowFontInfo(winID, fontID, 7) -- Max character width.
+	window.addMenuItems(winID, 1, menuItemList)
 	if lastPacket then  onGMCPReceived("room.map", lastPacket)  end
+	loadFont(winID, fontID, fontFamily, fontSize)
 	window.draw(winID)
 end
 
