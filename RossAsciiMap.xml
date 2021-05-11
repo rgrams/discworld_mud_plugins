@@ -275,7 +275,7 @@ local function final()
 	winRect.x, winRect.y, winRect.width, winRect.height, winRect.z = window.getRect(winID)
 	winLocked = window.getLocked(winID)
 	WindowDelete(winID)
-	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map")
+	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map", "room.writtenmap")
 end
 
 function OnPluginInstall()  init()  end
