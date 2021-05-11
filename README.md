@@ -94,7 +94,7 @@ A Lua module to help manage miniwindows inside the client window that plugins ca
 
 **window.new(** winID, lt, top, width, height, z, [align], [flags], [bgColor], visible, [locked], [menuClickCb], [drawCb] **)**
 
-Create a new window.
+Create a new window. `menuClickCb` is a function to be called when a right-click-menu item is clicked. `drawCb` is a function to be called when the window is redrawn. See the list of callbacks below for the available arguments.
 
 **window.draw(** winID **)**
 
@@ -109,7 +109,7 @@ For Reference: https://www.gammon.com.au/scripts/doc.php?function=WindowMenu
 _Special Starting Characters Quick-Ref:_
 * "-" - Separator line.
 * "^" - Disabled / grayed out.
-* "+" - Checked (by default all items have no check-mark).
+* "+" - Checked (all items have space for a check-mark, so un-checked is just normal).
 * ">" - Start nested menu with title.
 * "<" - End nested menu (other characters ignored).
 
