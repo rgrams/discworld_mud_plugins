@@ -70,6 +70,7 @@ local mxpColorRegex = rex.new("MXP<(.+?)MXP>")
 local hexRegex = rex.new(".*? (#[0-9a-f]{6})") -- MXP<C #ff8700MXP>
 local lastMapPacket, lastMDTPacket-- Save last raw packet string to disk so we can show something on load.
 
+local MDTIndicatorsEnabled = true
 local entityFilters = {}
 local CASE_INSENSITIVE = rex.flags().CASELESS
 
@@ -102,6 +103,9 @@ local function loadSettings()
 		COLORS[colorName] = tonumber(loadVar("color_" .. colorName)) or DEFAULT_COLORS[colorName]
 	end
 
+	local MDTEnabled = loadVar("MDTIndicatorsEnabled")
+	if MDTEnabled then  MDTIndicatorsEnabled = toboolean(MDTEnabled)  end
+
 	local filters = loadVar("entityFilters")
 	if filters then
 		entityFilters = json.decode(filters)
@@ -133,6 +137,8 @@ local function saveSettings()
 		saveVar("color_" .. colorName, COLORS[colorName])
 	end
 
+	saveVar("MDTIndicatorsEnabled", MDTIndicatorsEnabled)
+
 	-- Save custom entity filters.
 	if next(entityFilters) then
 		-- Can't save regex object, so make a copy of the filters without it.
@@ -155,14 +161,14 @@ local function refresh()
 	if lastMapPacket then
 		onGMCPReceived("room.map", lastMapPacket)
 	end
-	if lastMDTPacket then
+	if lastMDTPacket and MDTIndicatorsEnabled then
 		onGMCPReceived("room.writtenmap", lastMDTPacket)
 	else
 		window.draw(winID)
 	end
 end
 
--- Map Door Text Stuff:
+-- Living Thing Filter Editing:
 --------------------------------------------------
 local curMDTData
 local getCountRegex = rex.new("^(\\d+)")
@@ -180,7 +186,7 @@ local function addFilter(pattern, score, group, keepEvaluating, doesIgnoreCase)
 	table.insert(entityFilters, filter)
 end
 
-local function setFilter(filter)
+local function setFilter(i, filter)
 	-- 1. Set the regex pattern.
 	local msg = [[Enter a regular expression to check against the living thing name.
 
@@ -243,7 +249,7 @@ end
 local function modifyFilter()
 	local filterIdx = chooseFilter("", "Choose a Filter to Modify")
 	if filterIdx then
-		setFilter(entityFilters[filterIdx])
+		setFilter(nil, entityFilters[filterIdx])
 	end
 end
 
@@ -272,6 +278,14 @@ local function setFilterOrder()
 			table.insert(entityFilters, toIdx, filter)
 		end
 	end
+end
+
+-- MDT Data Handling:
+--------------------------------------------------
+local function toggleMDTIndicators(i)
+	MDTIndicatorsEnabled = not MDTIndicatorsEnabled
+	window.checkMenuItem(winID, i, MDTIndicatorsEnabled)
+	refresh()
 end
 
 local function scoreMDTRooms(data)
@@ -315,7 +329,7 @@ local function pickFont()
 	end
 end
 
-local function pickColor(colorName)
+local function pickColor(i, colorName)
 	local result = PickColour(COLORS[colorName])
 	if result ~= -1 then
 		COLORS[colorName] = result
@@ -323,12 +337,12 @@ local function pickColor(colorName)
 	end
 end
 
-local function resetColorToDefault(colorName)
+local function resetColorToDefault(i, colorName)
 	COLORS[colorName] = DEFAULT_COLORS[colorName]
 	refresh()
 end
 
-local function setSpacing(axis)
+local function setSpacing(i, axis)
 	local curSpacing = axis == "X" and spacingX or spacingY
 	local msg = "Enter your desired " .. axis .. " spacing."
 	local title = "Set " .. axis .. " Spacing"
@@ -357,7 +371,7 @@ menuItem("Set X spacing...(cur: "..spacingX..")", setSpacing, "X")
 menuItem("Set Y spacing...(cur: "..spacingY..")", setSpacing, "Y")
 local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White"}
 menuItem(">Colors:")
-menuItem(">defaults:")
+menuItem(">Defaults:")
 for i,colorName in ipairs(colorNames) do
 	menuItem("Reset "..colorName.." to default", resetColorToDefault, colorName)
 end
@@ -367,7 +381,10 @@ for i,colorName in ipairs(colorNames) do
 	menuItem("Set "..colorName.." color...", pickColor, colorName)
 end
 menuItem("<")
-menuItem(">Custom living thing filters:")
+menuItem(">Living thing indicators:")
+menuItem("+Enabled", toggleMDTIndicators) -- Change the toggle on init, after settings are loaded.
+local MDTEnabledMenuIndex = #menuItems
+menuItem("-")
 menuItem("Add filter...", setFilter)
 menuItem("Modify filter...", modifyFilter)
 menuItem("Delete filter...", deleteFilter)
@@ -381,7 +398,7 @@ local function menuItemClicked(winID, i, prefix, item)
 	local data = menuItems[i]
 	if data then
 		local fn = data[2]
-		fn(unpack(data, 3))
+		fn(i, unpack(data, 3))
 	end
 end
 
@@ -441,9 +458,11 @@ end
 function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
 		lastMDTPacket = dataStr
-		curMDTData = parseMDT(dataStr)
-		scoreMDTRooms(curMDTData)
-		makeMDTArraymap(curMDTData)
+		if MDTIndicatorsEnabled then
+			curMDTData = parseMDT(dataStr)
+			scoreMDTRooms(curMDTData)
+			makeMDTArraymap(curMDTData)
+		end
 		window.draw(winID) -- writtenmap is sent second, so draw here.
 	elseif message == "room.map" then
 		-- Map is colored with MXP color codes. First strip out the extra junk, then split into lines and process the color codes.
@@ -515,7 +534,7 @@ local function drawWindow()
 	end
 
 	-- Draw room scores.
-	if curMDTData then
+	if MDTIndicatorsEnabled and curMDTData then
 		local ox, oy = winRect.width/2, winRect.height/2 -- Start from player pos, center of window.
 		for dy,row in pairs(curMDTData.scoreMap) do
 			for dx,score in pairs(row) do
@@ -545,6 +564,9 @@ local function init()
 		nil, nil, nil, true, winLocked, menuItemClicked, drawWindow
 	)
 	window.addMenuItems(winID, 1, menuItemList)
+	if not MDTIndicatorsEnabled then
+		window.checkMenuItem(winID, MDTEnabledMenuIndex, MDTIndicatorsEnabled)
+	end
 	loadFont(winID, fontID, fontFamily, fontSize)
 	refresh()
 end
