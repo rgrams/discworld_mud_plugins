@@ -18,6 +18,8 @@
 <script>
 	<![CDATA[
 
+require "json"
+
 local SELF_ID = GetPluginID()
 local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
 local winID = SELF_ID .. "RossAsciiMap"
@@ -70,6 +72,9 @@ local mxpColorRegex = rex.new("MXP<(.+?)MXP>")
 local hexRegex = rex.new(".*? (#[0-9a-f]{6})") -- MXP<C #ff8700MXP>
 local lastPacket -- Save last raw packet string to disk so we can show something on load.
 
+local entityFilters = {}
+local CASE_INSENSITIVE = rex.flags().CASELESS
+
 -- Loading & Saving Settings:
 --------------------------------------------------
 local function toboolean(v) -- Convert a value to a boolean. Always returns a boolean.
@@ -95,6 +100,15 @@ local function loadSettings()
 	for colorName in pairs(COLORS) do
 		COLORS[colorName] = tonumber(loadVar("color_" .. colorName)) or DEFAULT_COLORS[colorName]
 	end
+
+	local filters = loadVar("entityFilters")
+	if filters then
+		entityFilters = json.decode(filters)
+		for i,f in ipairs(entityFilters) do
+			local regexFlags = f.doesIgnoreCase and CASE_INSENSITIVE or nil
+			f.regex = rex.new(f.pattern, regexFlags)
+		end
+	end
 end
 
 local function saveVar(name, val, nilVal)
@@ -114,10 +128,165 @@ local function saveSettings()
 	for colorName in pairs(COLORS) do
 		saveVar("color_" .. colorName, COLORS[colorName])
 	end
+
+	-- Save custom entity filters.
+	if next(entityFilters) then
+		-- Can't save regex object, so make a copy of the filters without it.
+		local saveData = {}
+		local filterPropsToSave = {"pattern", "score", "group", "keepEvaluating", "doesIgnoreCase"}
+		for i,f in ipairs(entityFilters) do
+			local v = {}
+			for _,prop in ipairs(filterPropsToSave) do  v[prop] = f[prop]  end
+			saveData[i] = v
+		end
+		saveVar("entityFilters", json.encode(saveData))
+	end
 end
 
 function OnPluginSaveState()
 	saveSettings()
+end
+
+-- Map Door Text Stuff:
+--------------------------------------------------
+local curMDTData
+local getCountRegex = rex.new("^(\\d+)")
+
+local function addFilter(pattern, score, group, keepEvaluating, doesIgnoreCase)
+	local regexFlags = doesIgnoreCase and CASE_INSENSITIVE or nil
+	local filter = {
+		regex = rex.new(pattern, regexFlags),
+		pattern = pattern,
+		score = score,
+		group = group,
+		keepEvaluating = keepEvaluating,
+		doesIgnoreCase = doesIgnoreCase
+	}
+	table.insert(entityFilters, filter)
+end
+
+local function setFilter(filter)
+	-- 1. Set the regex pattern.
+	local msg = [[Enter a regular expression to check against the living thing name.
+
+If there are multiple identical things in the room, their text will start with a number.
+i.e. "2 annoying children".
+Certain colored things with 'and' in their name will become hyphenated.
+i.e. "grey-and-white spaniel"
+Capitalization is preserved, but you can set the regex to be case-insensitive.]]
+	local extras = { box_width = 800, box_height = 250, prompt_height = 100 }
+	local default = filter and filter.pattern
+	local pattern = utils.editbox(msg, "Define RegEx", default, nil, nil, extras)
+	if not pattern then  return  end
+
+	-- 2. Set the score.
+	local msg = [[Enter your desired score number.]]
+	local default = filter and filter.score or 1
+	local score = utils.inputbox(msg, "Select Score", default)
+	if not score then  return  end
+	score = tonumber(score)
+	if not score then  Note("Invalid score. Must be a number. Aborting.")  return  end
+
+	-- 3. Set 'keepEvaluating'.
+	local msg = [[Should we keep evaluating if this filter matches?
+i.e. should subsequent filters be able to override this one?]]
+	local default = filter and (filter.keepEvaluating and 1 or 2) or 2
+	local keepEvaluating = utils.msgbox(msg, "Keep Evaluating?", "yesno", "?", default)
+	if not keepEvaluating then  return  end
+	keepEvaluating = keepEvaluating == "yes" and true or nil
+
+	-- 4. Set 'doesIgnoreCase'
+	local msg = [[Is the regex pattern case-sensitive?]]
+	local default = filter and (filter.doesIgnoreCase and 2 or 1) or 1
+	local doesIgnoreCase = utils.msgbox(msg, "Case-sensitive?", "yesno", "?", 1)
+	if not doesIgnoreCase then  return  end
+	doesIgnoreCase = doesIgnoreCase == "no" and true or nil
+
+	if filter then
+		local regexFlags = doesIgnoreCase and CASE_INSENSITIVE or nil
+		filter.regex = rex.new(pattern, regexFlags)
+		filter.pattern = pattern
+		filter.score = score
+		filter.keepEvaluating = keepEvaluating
+		filter.doesIgnoreCase = doesIgnoreCase
+	else
+		addFilter(pattern, score, group, keepEvaluating, doesIgnoreCase)
+	end
+end
+
+local function chooseFilter(msg, title)
+	local list = {}
+	for i,f in ipairs(entityFilters) do
+		local str = i .. ": " .. f.pattern .. ", " .. tostring(f.score) .. ", "
+		str = str .. tostring(not not keepEvaluating) .. ", " .. tostring(not doesIgnoreCase)
+		table.insert(list, str)
+	end
+
+	return utils.listbox(msg, title, list), list -- Return the filter index.
+end
+
+local function modifyFilter()
+	local filterIdx = chooseFilter("", "Choose a Filter to Modify")
+	if filterIdx then
+		setFilter(entityFilters[filterIdx])
+	end
+end
+
+local function deleteFilter()
+	local filterIdx, list = chooseFilter("", "Choose a Filter to Delete")
+	if filterIdx then
+		local idStr = list[filterIdx]
+		local msg = "Are you sure you want to delete the filter:\n" .. idStr
+		local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
+		if confirm == "ok" then
+			table.remove(entityFilters, filterIdx)
+		end
+	end
+end
+
+local function setFilterOrder()
+	local filterIdx = chooseFilter("", "Choose a Filter to Reorder")
+	if filterIdx then
+		local minI, maxI = 1, #entityFilters
+		local list = {}
+		for i=minI,maxI do  list[i] = i  end
+		local toIdx = utils.choose("", "Choose a New Index", list, filterIdx)
+		if toIdx then
+			local filter = entityFilters[filterIdx]
+			table.remove(entityFilters, filterIdx)
+			table.insert(entityFilters, toIdx, filter)
+		end
+	end
+end
+
+local function scoreMDTRooms(data)
+	for i,room in ipairs(data) do
+		local score = 0
+		for i,entStr in ipairs(room.entities) do
+			local _, _, capt = getCountRegex:match(entStr)
+			local count = capt and capt[1] or 1
+			local entScore = 1
+			for i,filter in ipairs(entityFilters) do
+				if filter.regex:match(entStr) then
+					entScore = filter.score
+					if not filter.keepEvaluating then  break  end
+				end
+			end
+			score = score + entScore*count
+		end
+		room.score = score
+	end
+end
+
+-- Make a 2D array of room scores with relative coordinates from player.
+local function makeMDTArraymap(data)
+	local map = {}
+	for i,room in ipairs(data) do
+		local x, y = room.dx, room.dy
+		map[y] = map[y] or {}
+		map[y][x] = room.score or 1
+	end
+	data.scoreMap = map
 end
 
 -- Right-Click Menu Handling:
@@ -168,6 +337,12 @@ menuItem("-")
 for i,colorName in ipairs(colorNames) do
 	menuItem("Set "..colorName.." color...", pickColor, colorName)
 end
+menuItem("<")
+menuItem(">Custom living thing filters:")
+menuItem("Add filter...", setFilter)
+menuItem("Modify filter...", modifyFilter)
+menuItem("Delete filter...", deleteFilter)
+menuItem("Change filter order...", setFilterOrder)
 menuItem("<")
 
 local menuItemList = {} -- List of button texts for adding to window.
@@ -233,33 +408,6 @@ end
        \
         *-
 --]]
-
-local curMDTData
-
-local getCountRegex = rex.new("^(\\d+)")
-
-local function scoreMDTRooms(data)
-	for i,room in ipairs(data) do
-		local score = 0
-		for i,entStr in ipairs(room.entities) do
-			local _, _, capt = getCountRegex:match(entStr)
-			local count = capt and capt[1] or 1
-			score = score + count
-		end
-		room.score = score
-	end
-end
-
--- Make a 2D array of room scores with relative coordinates from player.
-local function makeMDTArraymap(data)
-	local map = {}
-	for i,room in ipairs(data) do
-		local x, y = room.dx, room.dy
-		map[y] = map[y] or {}
-		map[y][x] = room.score or 1
-	end
-	data.scoreMap = map
-end
 
 function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
