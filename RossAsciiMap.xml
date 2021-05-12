@@ -385,6 +385,7 @@ menuItem(">Living thing indicators:")
 menuItem("+Enabled", toggleMDTIndicators) -- Change the toggle on init, after settings are loaded.
 local MDTEnabledMenuIndex = #menuItems
 menuItem("-")
+menuItem("Show filter list...", modifyFilter)
 menuItem("Add filter...", setFilter)
 menuItem("Modify filter...", modifyFilter)
 menuItem("Delete filter...", deleteFilter)
