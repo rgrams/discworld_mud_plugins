@@ -582,8 +582,9 @@ local function drawWindow()
 						groupName = "default"
 					end
 					local group = filterGroups[groupName]
-					local _x, _y = x + group.offsetX, y + group.offsetY
-					WindowText(winID, group.fontID, score, _x, _y, _x+group.fontMaxCharWidth, _y+gridY, group.color)
+					local _x, _y = x + group.ox, y + group.oy
+					local width = group.fontMaxCharWidth * tostring(score):len()
+					WindowText(winID, group.fontID, score, _x, _y, _x+width, _y+gridY, group.color)
 				end
 			end
 		end
