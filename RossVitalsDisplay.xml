@@ -175,8 +175,8 @@ local labelFonts = {}
 local lastFont
 local longestLabelString = "HP"
 
-local HEARTTIMER = "heartbeat"
-local HEARTTIMERFLAGS = 1 + 1024 + 16384 -- enabled, replace (just in case), and temporary? ("don't save to world file"?)
+local HEARTBEAT_TIMER_NAME = "heartbeat"
+local HEARTBEAT_TIMER_FLAGS = 1 + 1024 + 16384 -- enabled, replace (just in case), and temporary? ("don't save to world file"?)
 
 -- Load saved settings.
 --------------------------------------------------
@@ -700,7 +700,7 @@ local function init()
 	draw()
 
 	-- Start Heartbeat Timer.
-	AddTimer(HEARTTIMER, 0, 0, 2, "", HEARTTIMERFLAGS, "heartbeatTick")
+	AddTimer(HEARTBEAT_TIMER_NAME, 0, 0, 2, "", HEARTBEAT_TIMER_FLAGS, "heartbeatTick")
 end
 
 -- Teardown - OnPluginClose (uninstall) and OnPluginDisable.
@@ -709,7 +709,7 @@ local function final()
 	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "char.vitals")
 	updateWinRect()
 	WindowDelete(winID)
-	DeleteTimer(HEARTTIMER)
+	DeleteTimer(HEARTBEAT_TIMER_NAME)
 end
 
 function OnPluginInstall()  init()  end

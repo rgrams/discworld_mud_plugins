@@ -60,7 +60,7 @@ local handleHotspotSpecs = {
 	rtBot = { lt = {-1, 1}, top = {-1, 1}, rt = {0, 1}, bot = {0, 1} },
 }
 
-local handleCursors = {
+local handleCursors = { -- Ref: https://www.gammon.com.au/scripts/doc.php?function=WindowAddHotspot
 	lt = 8, rt = 8, top = 9, bot = 9,
 	ltTop = 6, rtBot = 6, rtTop = 7, ltBot = 7
 }

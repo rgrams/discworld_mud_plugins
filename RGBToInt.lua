@@ -1,6 +1,5 @@
 
-local max = math.max
-local min = math.min
+local max, min = math.max, math.min
 
 local function clamp(a, minVal, maxVal)
 	return min(maxVal, max(minVal, a))
