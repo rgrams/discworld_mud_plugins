@@ -128,7 +128,7 @@ local function parse(str, debugLevel)
    local chunks = {}
    chunkRegex:gmatch(str, function(m)  table.insert(chunks, m)  end)
 
-   local data = {} -- List of room entries: { entities, moves, dx, dy }
+   local rooms = {} -- List of room entries: { entities, moves, dx, dy }
 
    for i,chunk in pairs(chunks) do
       local chunkType, isPlural = getChunkType(chunk)
@@ -137,11 +137,11 @@ local function parse(str, debugLevel)
          local entities, moves, dx, dy = parseEntityChunk(chunk)
          if entities and #entities > 0 then
             local roomData = { entities = entities, moves = moves, dx = dx, dy = dy }
-            table.insert(data, roomData)
+            table.insert(rooms, roomData)
          end
       end
    end
-   return data
+   return rooms
 end
 
 return parse
