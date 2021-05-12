@@ -9,8 +9,7 @@ local numStrToNum = { [false] = 1, one = 1, two = 2, three = 3, four = 4, five =
 local longDirToShort = { northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw", north = "n", south = "s", east = "e", west = "w" }
 
 local customReplacers = {
-   {"black and white", "black-and-white"},
-   {"brown and white", "brown-and-white"},
+   {"(%w+) and white", "%1-and-white"},
    {"\\u001b%[%dz", ""},
    {"MXP<.-MXP>", ""},
 }
