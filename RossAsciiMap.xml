@@ -70,7 +70,7 @@ local mapLines = {}
 local colorChangesAt = {}
 local mxpColorRegex = rex.new("MXP<(.+?)MXP>")
 local hexRegex = rex.new(".*? (#[0-9a-f]{6})") -- MXP<C #ff8700MXP>
-local lastPacket -- Save last raw packet string to disk so we can show something on load.
+local lastMapPacket, lastMDTPacket-- Save last raw packet string to disk so we can show something on load.
 
 local entityFilters = {}
 local CASE_INSENSITIVE = rex.flags().CASELESS
@@ -94,7 +94,8 @@ local function loadSettings()
 		winRect[k] = tonumber(GetVariable("window_" .. k)) or v
 	end
 	winLocked = toboolean(GetVariable("windowLocked"))
-	lastPacket = loadVar("lastPacket")
+	lastMapPacket = loadVar("lastMapPacket")
+	lastMDTPacket = loadVar("lastMDTPacket")
 	fontFamily = loadVar("fontFamily") or fontFamily
 	fontSize = loadVar("fontSize") or fontSize
 	for colorName in pairs(COLORS) do
@@ -122,7 +123,8 @@ local function saveSettings()
 	end
 	winLocked = window.getLocked(winID)
 	saveVar("windowLocked", winLocked)
-	if lastPacket then  saveVar("lastPacket", lastPacket)  end
+	if lastMapPacket then  saveVar("lastMapPacket", lastMapPacket)  end
+	if lastMDTPacket then  saveVar("lastMDTPacket", lastMDTPacket)  end
 	saveVar("fontFamily", fontFamily, "fixedsys")
 	saveVar("fontSize", fontSize, 9)
 	for colorName in pairs(COLORS) do
@@ -145,6 +147,17 @@ end
 
 function OnPluginSaveState()
 	saveSettings()
+end
+
+local function refresh()
+	if lastMapPacket then
+		onGMCPReceived("room.map", lastMapPacket)
+	end
+	if lastMDTPacket then
+		onGMCPReceived("room.writtenmap", lastMDTPacket)
+	else
+		window.draw(winID)
+	end
 end
 
 -- Map Door Text Stuff:
@@ -304,19 +317,13 @@ local function pickColor(colorName)
 	local result = PickColour(COLORS[colorName])
 	if result ~= -1 then
 		COLORS[colorName] = result
-		if lastPacket then
-			onGMCPReceived("room.map", lastPacket)
-			window.draw(winID)
-		end
+		refresh()
 	end
 end
 
 local function resetColorToDefault(colorName)
 	COLORS[colorName] = DEFAULT_COLORS[colorName]
-	if lastPacket then
-		onGMCPReceived("room.map", lastPacket)
-		window.draw(winID)
-	end
+	refresh()
 end
 
 local menuItems = {}
@@ -411,13 +418,14 @@ end
 
 function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
+		lastMDTPacket = dataStr
 		curMDTData = parseMDT(dataStr)
 		scoreMDTRooms(curMDTData)
 		makeMDTArraymap(curMDTData)
 		window.draw(winID) -- writtenmap is sent second, so draw here.
 	elseif message == "room.map" then
 		-- Map is colored with MXP color codes. First strip out the extra junk, then split into lines and process the color codes.
-		lastPacket = dataStr
+		lastMapPacket = dataStr
 		local map = dataStr
 		map = string.sub(map, 2, -2) -- remove surrounding quotes ("").
 		map = string.gsub(map, "\\u001b%[4z", "") -- Remove ANSI codes before MXP colors.
@@ -515,9 +523,8 @@ local function init()
 		nil, nil, nil, true, winLocked, menuItemClicked, drawWindow
 	)
 	window.addMenuItems(winID, 1, menuItemList)
-	if lastPacket then  onGMCPReceived("room.map", lastPacket)  end
 	loadFont(winID, fontID, fontFamily, fontSize)
-	window.draw(winID)
+	refresh()
 end
 
 local function final()
