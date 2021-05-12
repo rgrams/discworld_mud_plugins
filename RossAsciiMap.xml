@@ -45,7 +45,6 @@ local COLORS = {
 	Blue = RGBToInt(0, 0, 255),
 	Magenta = RGBToInt(255, 0, 255),
 	White = RGBToInt(255),
-	Black = RGBToInt(),
 	Desert = 34815,
 }
 local DEFAULT_COLORS = {}
@@ -356,7 +355,7 @@ end
 menuItem("Set font...", pickFont)
 menuItem("Set X spacing...(cur: "..spacingX..")", setSpacing, "X")
 menuItem("Set Y spacing...(cur: "..spacingY..")", setSpacing, "Y")
-local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White", "Black"}
+local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White"}
 menuItem(">Colors:")
 menuItem(">defaults:")
 for i,colorName in ipairs(colorNames) do
