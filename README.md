@@ -7,7 +7,22 @@ The plugins here should all work, but some of them are works in progress, so the
 # User Plugins
 Plugins that do things a normal user will care about. (As opposed to "back-end" plugins that only make life easier for other plugins.)
 
+## ASCII Map
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/RossAsciiMap.xml) (right-click and save as...)
+
+Shows the in-game ASCII map in a persistent miniwindow. You can adjust the font, X/Y spacing, and colors via the right-click menu.
+
+[New Beta!] Can also show indicators for what and how many living things are in rooms on the map. By default it just shows a count of how many things are in each room, but you can set up custom filters and groups to score things differently or to show multiple indicators next to each room.
+
+#### Dependencies:
+* GMCP Interface Plugin.
+* Map Door Text Parser module.
+* window module.
+* RGBToInt module.
+
 ## Easy Hotkeys
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/EasyHotkeys.xml) (right-click and save as...)
+
 This plugin lets you bind any hotkeys you want from within the MUSHclient, without doing any scripting. The MUSHclient normally only allows you to use a limited set of hotkeys (from the World Properties > Input > Macros window) and with limited options for how they work. From a plugin script you can use almost any key or combination of keys, as well as the full list of "Send To:" options, like you have with a trigger or alias. This plugin simply provides an interface for users to add and remove hotkeys without having to edit and reload a plugin, or have any knowledge of scripting whatsoever. This plugin is not Discworld-specific.
 
 There are built-in instructions, so you just need to add the plugin via the Plugins window (File > Plugins...). It will tell you to type "hotkey help" when it loads.
@@ -15,6 +30,8 @@ There are built-in instructions, so you just need to add the plugin via the Plug
 Hotkeys set with this plugin will generally override any functionality the given key combo had before. Such as: Ctrl+C for copy, Ctrl+M for minimize, etc. They will go back to normal if the hotkey is removed or the plugin is uninstalled or disabled.
 
 ## Vitals Display
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/RossVitalsDisplay.xml) (right-click and save as...)
+
 A status bar display for some or all of your character's "vital" stats (Hp, Gp, Xp, Burden, and Alignment). Can also send text notifications when any of these stats change. You can set various options through the window's right-click menu.
 
 This is almost identical to Quow's vitals bars, only you can fully choose which stats to display, and you can have notifications for the gain or loss of each stat, with any threshold value you like for each. It doesn't have much in the way of visual customization right now, but I will add more in the future.
@@ -40,6 +57,8 @@ Also see the `window` module below for the features of the display window. (It c
 Plugins and Lua modules that handle features that might otherwise be duplicated between multiple plugins.
 
 ## GMCP Interface
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/GMCP_Interface.xml) (right-click and save as...)
+
 A mostly-generic GMCP handler & subscription interface for other plugins. It enables and handles all the GMCP packet types that the Discworld MUD uses, and sends each one out to any plugins that requested it.
 
 * Use the "`gmcpdebug <mode> <packetNameFilter>`" command to debug on the fly.
@@ -73,12 +92,21 @@ function OnPluginDisable()  final() end
 ```
 
 ## Plugin Reloader
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/Plugin_Reloader.xml) (right-click and save as...)
+
 A tiny plugin for reloading other plugins by typing a command or pressing a hotkey combination.
 
 Type "`reload plugin <plugin_name>`" to reload any other installed plugin.
 You can also press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> to reload the last plugin you reloaded. The last plugin name is saved between sessions.
 
+## Map Door Text Parser
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/MapDoorTextParser.lua) (right-click and save as...)
+
+A lua module to translate the result of '`map door text`' or the contents of the "room.writtenmap" GMCP packet into a convenient table of rooms and lists of living things.
+
 ## window
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/window.lua) (right-click and save as...)
+
 A Lua module to help manage miniwindows inside the client window that plugins can use to show stuff. The ones created by this module will already be set up with some common features:
 
 * Drag the main area to move the window.
@@ -157,6 +185,8 @@ _Available callbacks:_
 * `handleRelease(flags, hotspotID, hotspotName, winID)`
 
 ## RGBToInt
+[Download Link](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/RGBToInt.lua) (right-click and save as...)
+
 A tiny module--only one function--to convert three 0-255 RGB into a single integer color.
 
 ```Lua
