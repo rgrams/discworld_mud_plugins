@@ -52,8 +52,7 @@ local DEFAULT_COLORS = {}
 for k,v in pairs(COLORS) do  DEFAULT_COLORS[k] = v  end
 local fontFamily = "fixedsys"
 local fontSize = 9 -- NOTE: FixedSys only comes in this size.
-local lineSpacing = 0
-local charSpacing = 0
+local spacingX, spacingY = 0, 0
 
 -- Other Vars:
 --------------------------------------------------
@@ -98,6 +97,8 @@ local function loadSettings()
 	lastMDTPacket = loadVar("lastMDTPacket")
 	fontFamily = loadVar("fontFamily") or fontFamily
 	fontSize = loadVar("fontSize") or fontSize
+	spacingX = loadVar("spacingX") or spacingX
+	spacingY = loadVar("spacingY") or spacingY
 	for colorName in pairs(COLORS) do
 		COLORS[colorName] = tonumber(loadVar("color_" .. colorName)) or DEFAULT_COLORS[colorName]
 	end
@@ -127,6 +128,8 @@ local function saveSettings()
 	if lastMDTPacket then  saveVar("lastMDTPacket", lastMDTPacket)  end
 	saveVar("fontFamily", fontFamily, "fixedsys")
 	saveVar("fontSize", fontSize, 9)
+	saveVar("spacingX", spacingX, 0)
+	saveVar("spacingY", spacingY, 0)
 	for colorName in pairs(COLORS) do
 		saveVar("color_" .. colorName, COLORS[colorName])
 	end
@@ -326,6 +329,24 @@ local function resetColorToDefault(colorName)
 	refresh()
 end
 
+local function setSpacing(axis)
+	local curSpacing = axis == "X" and spacingX or spacingY
+	local msg = "Enter your desired " .. axis .. " spacing."
+	local title = "Set " .. axis .. " Spacing"
+	local newSpacing = utils.inputbox(msg, title, curSpacing)
+	if not newSpacing then  return  end
+	newSpacing = tonumber(newSpacing)
+	if not newSpacing then  Note("Invalid spacing. Must be a number. Aborting.")  return  end
+	if axis == "X" then
+		spacingX = newSpacing
+		window.setMenuItem(winID, 2, "Set X spacing...(cur: "..spacingX..")")
+	else
+		spacingY = newSpacing
+		window.setMenuItem(winID, 3, "Set Y spacing...(cur: "..spacingY..")")
+	end
+	refresh()
+end
+
 local menuItems = {}
 
 local function menuItem(text, fn, ...)
@@ -333,6 +354,8 @@ local function menuItem(text, fn, ...)
 end
 
 menuItem("Set font...", pickFont)
+menuItem("Set X spacing...(cur: "..spacingX..")", setSpacing, "X")
+menuItem("Set Y spacing...(cur: "..spacingY..")", setSpacing, "Y")
 local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White", "Black"}
 menuItem(">Colors:")
 menuItem(">defaults:")
@@ -463,7 +486,7 @@ local function drawWindow()
 	WindowRectOp(winID, 2, 0, 0, winRect.width, winRect.height, COLORS.background) -- Clear/Fill Background
 	WindowRectOp(winID, 1, 0, 0, winRect.width, winRect.height, COLORS.border) -- Draw Border
 
-	local gridX, gridY = fontCharWidth + charSpacing, fontHeight + lineSpacing
+	local gridX, gridY = fontCharWidth + spacingX, fontHeight + spacingY
 
 	local mapHalfWidth = (playerX - 0.5) * gridX
 	local mapHalfHeight = (playerY - 0.5) * gridY
