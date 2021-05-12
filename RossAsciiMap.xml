@@ -87,6 +87,7 @@ local DEFAULT_FILTER_GROUP = {
 	oy = 0
 }
 local filterGroups = { default = copy(DEFAULT_FILTER_GROUP) }
+local disabledGroups = {}
 local CASE_INSENSITIVE = rex.flags().CASELESS
 
 -- Loading & Saving Settings:
@@ -131,9 +132,10 @@ local function loadSettings()
 	end
 
 	local groups = loadVar("filterGroups")
-	if groups then
-		filterGroups = json.decode(groups)
-	end
+	if groups then  filterGroups = json.decode(groups)  end
+
+	local disabled = loadVar("disabledGroups")
+	if disabled then  disabledGroups = json.decode(disabled)  end
 end
 
 local function saveVar(name, val, nilVal)
@@ -173,6 +175,7 @@ local function saveSettings()
 	end
 
 	saveVar("filterGroups", json.encode(filterGroups))
+	saveVar("disabledGroups", json.encode(disabledGroups))
 end
 
 function OnPluginSaveState()
@@ -270,9 +273,13 @@ end
 local function chooseFilter(msg, title, isMulti)
 	local list = {}
 	for i,f in ipairs(entityFilters) do
-		local str = i .. ": " .. f.pattern .. ", " .. tostring(f.score) .. ", "
-		str = str .. '"' .. (f.group or "default") .. '", '
-		str = str .. tostring(not not keepEvaluating) .. ", " .. tostring(not doesIgnoreCase)
+		local str = '%s: %s, %s, "%s", %s, %s  %s'
+		local isDisabled = disabledGroups[f.group or "default"] and "(group disabled)" or ""
+		str = str:format(
+			i, f.pattern, f.score, f.group or "default",
+			tostring(not not keepEvaluating), tostring(not doesIgnoreCase),
+			isDisabled
+		)
 		table.insert(list, str)
 	end
 
@@ -397,8 +404,9 @@ end
 local function chooseGroup(msg, title, isMulti)
 	local list = {}
 	for groupName,group in pairs(filterGroups) do
-		local str = '"%s", %s, %s, %s, %s, %s'
-		str = str:format(groupName, group.color, group.fontFamily, group.fontSize, group.ox, group.oy)
+		local str = '"%s", %s, %s, %s, %s, %s  %s'
+		local isDisabled = disabledGroups[groupName] and "(disabled)" or ""
+		str = str:format(groupName, group.color, group.fontFamily, group.fontSize, group.ox, group.oy, isDisabled)
 		list[groupName] = str
 	end
 
@@ -432,6 +440,22 @@ local function deleteGroups()
 	end
 end
 
+local function toggleGroups()
+	local msg = "You may select multiple."
+	msg = msg .. "\nAny filters associated with disabled groups will be skipped."
+	local groupNames, list = chooseGroup(msg, "Choose Groups to Toggle On/Off", true)
+	if groupNames then
+		for groupName in pairs(groupNames) do
+			if disabledGroups[groupName] then
+				disabledGroups[groupName] = nil -- Enable again, remove from dict.
+			else
+				disabledGroups[groupName] = true -- Disable.
+			end
+		end
+		refresh()
+	end
+end
+
 -- MDT Data Handling:
 --------------------------------------------------
 local function toggleMDTIndicators(i)
@@ -449,12 +473,14 @@ local function scoreMDTRooms(rooms)
 			local count = capt and capt[1] or 1
 			local wasCaughtByFilter = false
 			for i,filter in ipairs(entityFilters) do
-				if filter.regex:match(entityStr) then
-					wasCaughtByFilter = true
-					local groupName = filter.group or "default"
-					scoreList[groupName] = scoreList[groupName] or 0
-					scoreList[groupName] = scoreList[groupName] + count * filter.score
-					if not filter.keepEvaluating then  break  end
+				if not disabledGroups[filter.group or "default"] then
+					if filter.regex:match(entityStr) then
+						wasCaughtByFilter = true
+						local groupName = filter.group or "default"
+						scoreList[groupName] = scoreList[groupName] or 0
+						scoreList[groupName] = scoreList[groupName] + count * filter.score
+						if not filter.keepEvaluating then  break  end
+					end
 				end
 			end
 			if not wasCaughtByFilter then
@@ -552,6 +578,7 @@ menuItem("-")
 menuItem("Show groups...", modifyGroup)
 menuItem("Add group...", setGroup)
 menuItem("Delete groups...", deleteGroups)
+menuItem("Toggle groups...", toggleGroups)
 menuItem("<")
 
 local menuItemList = {} -- List of button texts for adding to window.
