@@ -67,7 +67,7 @@ local fontID = "font" -- Not the font name, just the ID it's registered to for o
 local fontHeight
 local fontCharWidth
 local fontMaxCharWidth -- For the rect to draw each character within.
-local loadMapFont -- Upvalue for function.
+local loadMapFont, loadFilterGroupFont -- Upvalue for functions defined below.
 
 local playerY, playerX = 1, 1
 local mapLines = {}
@@ -83,8 +83,8 @@ local DEFAULT_FILTER_GROUP = {
 	color = RGBToInt(255, 0, 0),
 	fontFamily = "fixedsys",
 	fontSize = 9,
-	offsetX = 2,
-	offsetY = 0
+	ox = 2,
+	oy = 0
 }
 local filterGroups = { default = copy(DEFAULT_FILTER_GROUP) }
 local CASE_INSENSITIVE = rex.flags().CASELESS
@@ -129,6 +129,11 @@ local function loadSettings()
 			f.regex = rex.new(f.pattern, regexFlags)
 		end
 	end
+
+	local groups = loadVar("filterGroups")
+	if groups then
+		filterGroups = json.decode(groups)
+	end
 end
 
 local function saveVar(name, val, nilVal)
@@ -166,6 +171,8 @@ local function saveSettings()
 		end
 		saveVar("entityFilters", json.encode(saveData))
 	end
+
+	saveVar("filterGroups", json.encode(filterGroups))
 end
 
 function OnPluginSaveState()
@@ -309,6 +316,112 @@ local function setFilterOrder()
 	end
 end
 
+-- Group Editing:
+--------------------------------------------------
+local function addGroup(name, color, fontFamily, fontSize, ox, oy)
+	local group = {
+		name = name,
+		color = color,
+		fontFamily = fontFamily,
+		fontSize = fontSize,
+		ox = ox,
+		oy = oy
+	}
+	filterGroups[name] = group
+	loadFilterGroupFont(winID, group)
+end
+
+local function setGroup(i, group)
+	-- 1. Set the group name.
+	local msg = [[Enter the group name.]]
+	local default = group and group.name
+	local name = utils.inputbox(msg, "Enter a Group Name", default)
+	if not name then  return  end
+	if filterGroups[name] and not (group and group.name == name) then
+		Note('The group name: "'..name..'" is already used. Aborting.')
+		return
+	end
+
+	-- 2. Set the group color.
+	local default = group and group.color or DEFAULT_FILTER_GROUP.color
+	local color = PickColour(default)
+	if color == -1 then  return  end
+
+	-- 3. Set the group font family and size.
+	local defaultFamily = group and group.fontFamily or DEFAULT_FILTER_GROUP.fontFamily
+	local defaultSize = group and group.fontSize or DEFAULT_FILTER_GROUP.fontSize
+	local fontSpecs = utils.fontpicker(defaultFamily, defaultSize)
+	local fontFamily, fontSize
+	if fontSpecs then
+		fontFamily, fontSize = fontSpecs.name, fontSpecs.size
+	end
+
+	-- 4. Set the group X-offset.
+	local default = group and group.ox or DEFAULT_FILTER_GROUP.ox
+	local title = "Choose X Offset"
+	local msg = "Enter the offset on the X-axis where the group score will be shown."
+	local ox = utils.inputbox(msg, title, default)
+	if not ox then  return  end
+	ox = tonumber(ox)
+	if not ox then  Note("Invalid offset. Must be a number. Aborting.")  return  end
+
+	-- 5. Set the group Y-offset.
+	local default = group and group.oy or DEFAULT_FILTER_GROUP.oy
+	local title = "Choose Y Offset"
+	local msg = "Enter the offset on the Y-axis where the group score will be shown."
+	local oy = utils.inputbox(msg, title, default)
+	if not oy then  return  end
+	oy = tonumber(oy)
+	if not oy then  Note("Invalid offset. Must be a number. Aborting.")  return  end
+
+	if group then
+		group.name = name
+		group.color = color
+		group.fontFamily = fontFamily
+		group.fontSize = fontSize
+		group.ox = ox
+		group.oy = oy
+		loadFilterGroupFont(winID, group)
+	else
+		addGroup(name, color, fontFamily, fontSize, ox, oy)
+	end
+	refresh()
+end
+
+local function chooseGroup(msg, title)
+	local list = {}
+	for groupName,group in pairs(filterGroups) do
+		local str = '"%s", %s, %s, %s, %s, %s'
+		str = str:format(groupName, group.color, group.fontFamily, group.fontSize, group.ox, group.oy)
+		list[groupName] = str
+	end
+
+	local message = 'Shown as: "groupName", color, font, fontSize, offsetX, offsetY'
+	if msg then
+		message = message .. "\n\n" .. msg
+	end
+	return utils.listbox(message, title, list), list -- Returns the group name.
+end
+
+local function modifyGroup()
+	local groupName = chooseGroup("Select a group to modify it.", "Choose a Group to Modify")
+	if groupName then
+		setGroup(nil, filterGroups[groupName])
+	end
+end
+
+local function deleteGroup()
+	local groupName, list = chooseGroup(nil, "Choose a Group to Delete")
+	if groupName then
+		local idStr = list[groupName]
+		local msg = "Are you sure you want to delete the group:\n" .. idStr
+		local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
+		if confirm == "ok" then
+			filterGroups[groupName] = nil
+		end
+	end
+end
+
 -- MDT Data Handling:
 --------------------------------------------------
 local function toggleMDTIndicators(i)
@@ -425,6 +538,10 @@ menuItem("Show filters...", modifyFilter)
 menuItem("Add filter...", setFilter)
 menuItem("Delete filter...", deleteFilter)
 menuItem("Change filter order...", setFilterOrder)
+menuItem("-")
+menuItem("Show groups...", modifyGroup)
+menuItem("Add group...", setGroup)
+menuItem("Delete group...", deleteGroup)
 menuItem("<")
 
 local menuItemList = {} -- List of button texts for adding to window.
@@ -577,11 +694,11 @@ local function drawWindow()
 				-- Double dx and dy because rooms are every-other line on the ASCII map.
 				local x, y = ox + dx*2*gridX, oy - dy*2*gridY -- Subtract dy because we draw in +y = down coordinates.
 				for groupName,score in pairs(scoreList) do
-					if not filterGroups[groupName] then
-						print('[ASCII Map] Warning: No filter group defined for name: "' .. groupName .. '"')
-						groupName = "default"
-					end
 					local group = filterGroups[groupName]
+					if not group then
+						Note('[ASCII Map] Warning: No filter group defined for name: "' .. groupName .. '"')
+						group = filterGroups.default or DEFAULT_FILTER_GROUP
+					end
 					local _x, _y = x + group.ox, y + group.oy
 					local width = group.fontMaxCharWidth * tostring(score):len()
 					WindowText(winID, group.fontID, score, _x, _y, _x+width, _y+gridY, group.color)
@@ -600,8 +717,8 @@ function loadMapFont(winID, fontID, fontFamily, fontSize) -- Is local--upvalue d
 	fontMaxCharWidth = WindowFontInfo(winID, fontID, 7) -- Max character width.
 end
 
-local function loadFilterGroupFont(winID, group)
-	group.fontID = group.name
+function loadFilterGroupFont(winID, group) -- Is local--upvalue defined above.
+	group.fontID = "font_" .. group.name
 	WindowFont(winID, group.fontID, group.fontFamily, group.fontSize)
 	group.fontMaxCharWidth = WindowFontInfo(winID, group.fontID, 7) -- Max character width.
 end
@@ -618,6 +735,7 @@ local function init()
 		window.checkMenuItem(winID, MDTEnabledMenuIndex, MDTIndicatorsEnabled)
 	end
 	loadMapFont(winID, fontID, fontFamily, fontSize)
+	loadFilterGroupFont(winID, DEFAULT_FILTER_GROUP)
 	for groupName,group in pairs(filterGroups) do
 		loadFilterGroupFont(winID, group)
 	end
