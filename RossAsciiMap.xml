@@ -267,7 +267,7 @@ i.e. should subsequent filters be able to override this one?]]
 	refresh()
 end
 
-local function chooseFilter(msg, title)
+local function chooseFilter(msg, title, isMulti)
 	local list = {}
 	for i,f in ipairs(entityFilters) do
 		local str = i .. ": " .. f.pattern .. ", " .. tostring(f.score) .. ", "
@@ -276,8 +276,12 @@ local function chooseFilter(msg, title)
 		table.insert(list, str)
 	end
 
-	msg = msg or 'Shown as: #: regex pattern, score, "group", keepEvaluating, caseSensitive'
-	return utils.listbox(msg, title, list), list -- Return the filter index.
+	local message = 'Shown as: #: regex pattern, score, "group", keepEvaluating, caseSensitive'
+	if msg then
+		message = message .. "\n\n" .. msg
+	end
+	local fn = isMulti and utils.multilistbox or utils.listbox
+	return fn(message, title, list), list -- Return the filter index.
 end
 
 local function modifyFilter()
@@ -287,16 +291,18 @@ local function modifyFilter()
 	end
 end
 
-local function deleteFilter()
-	local filterIdx, list = chooseFilter(nil, "Choose a Filter to Delete")
-	if filterIdx then
-		local idStr = list[filterIdx]
-		local msg = "Are you sure you want to delete the filter:\n" .. idStr
-		local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
-		if confirm == "ok" then
-			table.remove(entityFilters, filterIdx)
-			refresh()
+local function deleteFilters()
+	local filterIndices, list = chooseFilter("You may select multiple.", "Choose Filters to Delete", true)
+	if filterIndices then
+		for filterIdx in pairs(filterIndices) do
+			local idStr = list[filterIdx]
+			local msg = "Are you sure you want to delete the filter:\n" .. idStr
+			local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
+			if confirm == "ok" then
+				table.remove(entityFilters, filterIdx)
+			end
 		end
+		refresh()
 	end
 end
 
@@ -388,7 +394,7 @@ local function setGroup(i, group)
 	refresh()
 end
 
-local function chooseGroup(msg, title)
+local function chooseGroup(msg, title, isMulti)
 	local list = {}
 	for groupName,group in pairs(filterGroups) do
 		local str = '"%s", %s, %s, %s, %s, %s'
@@ -400,7 +406,8 @@ local function chooseGroup(msg, title)
 	if msg then
 		message = message .. "\n\n" .. msg
 	end
-	return utils.listbox(message, title, list), list -- Returns the group name.
+	local fn = isMulti and utils.multilistbox or utils.listbox
+	return fn(message, title, list), list -- Returns the group name.
 end
 
 local function modifyGroup()
@@ -410,15 +417,18 @@ local function modifyGroup()
 	end
 end
 
-local function deleteGroup()
-	local groupName, list = chooseGroup(nil, "Choose a Group to Delete")
-	if groupName then
-		local idStr = list[groupName]
-		local msg = "Are you sure you want to delete the group:\n" .. idStr
-		local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
-		if confirm == "ok" then
-			filterGroups[groupName] = nil
+local function deleteGroups()
+	local groupNames, list = chooseGroup("You may select multiple.", "Choose Groups to Delete", true)
+	if groupNames then
+		for groupName in pairs(groupNames) do
+			local idStr = list[groupName]
+			local msg = "Are you sure you want to delete the group:\n" .. idStr
+			local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
+			if confirm == "ok" then
+				filterGroups[groupName] = nil
+			end
 		end
+		refresh()
 	end
 end
 
@@ -536,12 +546,12 @@ local MDTEnabledMenuIndex = #menuItems
 menuItem("-")
 menuItem("Show filters...", modifyFilter)
 menuItem("Add filter...", setFilter)
-menuItem("Delete filter...", deleteFilter)
+menuItem("Delete filters...", deleteFilters)
 menuItem("Change filter order...", setFilterOrder)
 menuItem("-")
 menuItem("Show groups...", modifyGroup)
 menuItem("Add group...", setGroup)
-menuItem("Delete group...", deleteGroup)
+menuItem("Delete groups...", deleteGroups)
 menuItem("<")
 
 local menuItemList = {} -- List of button texts for adding to window.
