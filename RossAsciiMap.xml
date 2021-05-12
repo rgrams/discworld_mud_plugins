@@ -257,6 +257,7 @@ i.e. should subsequent filters be able to override this one?]]
 	else
 		addFilter(pattern, score, group, keepEvaluating, doesIgnoreCase)
 	end
+	refresh()
 end
 
 local function chooseFilter(msg, title)
@@ -287,6 +288,7 @@ local function deleteFilter()
 		local confirm = utils.msgbox(msg, "Really Delete?", "okcancel")
 		if confirm == "ok" then
 			table.remove(entityFilters, filterIdx)
+			refresh()
 		end
 	end
 end
@@ -302,6 +304,7 @@ local function setFilterOrder()
 			local filter = entityFilters[filterIdx]
 			table.remove(entityFilters, filterIdx)
 			table.insert(entityFilters, toIdx, filter)
+			refresh()
 		end
 	end
 end
@@ -418,9 +421,8 @@ menuItem(">Living thing indicators:")
 menuItem("+Enabled", toggleMDTIndicators) -- Change the toggle on init, after settings are loaded.
 local MDTEnabledMenuIndex = #menuItems
 menuItem("-")
-menuItem("Show filter list...", modifyFilter)
+menuItem("Show filters...", modifyFilter)
 menuItem("Add filter...", setFilter)
-menuItem("Modify filter...", modifyFilter)
 menuItem("Delete filter...", deleteFilter)
 menuItem("Change filter order...", setFilterOrder)
 menuItem("<")
