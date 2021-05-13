@@ -364,7 +364,7 @@ local function setGroup(i, group)
 	local defaultFamily = group and group.fontFamily or DEFAULT_FILTER_GROUP.fontFamily
 	local defaultSize = group and group.fontSize or DEFAULT_FILTER_GROUP.fontSize
 	local fontSpecs = utils.fontpicker(defaultFamily, defaultSize)
-	local fontFamily, fontSize
+	local fontFamily, fontSize = defaultFamily, defaultSize
 	if fontSpecs then
 		fontFamily, fontSize = fontSpecs.name, fontSpecs.size
 	end
