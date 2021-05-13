@@ -15,6 +15,28 @@
 	 >
 </plugin>
 
+<aliases>
+	<alias
+		match="^asciimap (enable|disable) (.+)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="aliasSetGroupsEnabled"
+		>
+	</alias>
+</aliases>
+
+<triggers>
+	<trigger
+		match="^asciimap (enable|disable) (.+)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="aliasSetGroupsEnabled"
+		>
+	</trigger>
+</triggers>
+
 <script>
 	<![CDATA[
 
@@ -231,7 +253,7 @@ Capitalization is preserved, but you can set the regex to be case-insensitive.]]
 	local score = utils.inputbox(msg, "Select Score", default)
 	if not score then  return  end
 	score = tonumber(score)
-	if not score then  Note("Invalid score. Must be a number. Aborting.")  return  end
+	if not score then  Note("[RossAsciiMap] - Invalid score. Must be a number. Aborting.")  return  end
 
 	-- 3. Set the group.
 	local msg = [[Things in each group is counted separately and each group count can be drawn as a separate indicator.]]
@@ -351,7 +373,7 @@ local function setGroup(i, group)
 	local name = utils.inputbox(msg, "Enter a Group Name", default)
 	if not name then  return  end
 	if filterGroups[name] and not (group and group.name == name) then
-		Note('The group name: "'..name..'" is already used. Aborting.')
+		Note('[RossAsciiMap] - The group name: "'..name..'" is already used. Aborting.')
 		return
 	end
 
@@ -376,7 +398,7 @@ local function setGroup(i, group)
 	local ox = utils.inputbox(msg, title, default)
 	if not ox then  return  end
 	ox = tonumber(ox)
-	if not ox then  Note("Invalid offset. Must be a number. Aborting.")  return  end
+	if not ox then  Note("[RossAsciiMap] - Invalid offset. Must be a number. Aborting.")  return  end
 
 	-- 5. Set the group Y-offset.
 	local default = group and group.oy or DEFAULT_FILTER_GROUP.oy
@@ -385,7 +407,7 @@ local function setGroup(i, group)
 	local oy = utils.inputbox(msg, title, default)
 	if not oy then  return  end
 	oy = tonumber(oy)
-	if not oy then  Note("Invalid offset. Must be a number. Aborting.")  return  end
+	if not oy then  Note("[RossAsciiMap] - Invalid offset. Must be a number. Aborting.")  return  end
 
 	if group then
 		group.name = name
@@ -456,6 +478,27 @@ local function toggleGroups()
 	end
 end
 
+function aliasSetGroupsEnabled(name, line, captures)
+	local isDisable = captures[1] == "disable"
+	local groupList = captures[2]
+	groupList:gsub(",", "")
+	local groupNames = {}
+	for groupName in string.gmatch(groupList, "([^%s]+)") do
+		table.insert(groupNames, groupName)
+	end
+	local val = isDisable or nil
+	local msg = "[RossAsciiMap] - " .. (isDisable and "Disabling" or "Enabling") .. ' group: "'
+	for i,groupName in ipairs(groupNames) do
+		if not filterGroups[groupName] then
+			Note('[RossAsciiMap] - Group: "' .. groupName .. '" does not exist.')
+		else
+			disabledGroups[groupName] = val
+			Note(msg .. groupName .. '".')
+		end
+	end
+	refresh()
+end
+
 -- MDT Data Handling:
 --------------------------------------------------
 local function toggleMDTIndicators(i)
@@ -507,6 +550,7 @@ end
 --------------------------------------------------
 local function pickFont()
 	local fnt = utils.fontpicker(fontFamily, fontSize)
+	print(fnt)
 	if fnt then
 		fontFamily, fontSize = fnt.name, fnt.size
 		loadMapFont(winID, fontID, fontFamily, fontSize)
@@ -534,7 +578,7 @@ local function setSpacing(i, axis)
 	local newSpacing = utils.inputbox(msg, title, curSpacing)
 	if not newSpacing then  return  end
 	newSpacing = tonumber(newSpacing)
-	if not newSpacing then  Note("Invalid spacing. Must be a number. Aborting.")  return  end
+	if not newSpacing then  Note("[RossAsciiMap] - Invalid spacing. Must be a number. Aborting.")  return  end
 	if axis == "X" then
 		spacingX = newSpacing
 		window.setMenuItem(winID, 2, "Set X spacing...(cur: "..spacingX..")")
@@ -618,7 +662,7 @@ local function processColorCodes(startPos, line, lineIdx)
 					colorInt = ColourNameToRGB(hexCaptures[1]) -- ColourNameToRGB will convert hex colors.
 				end
 			else
-				Note("RossAsciiMap - Unrecognized color code: '", string.sub(line, startI, endI), "'.")
+				Note("[RossAsciiMap] - Unrecognized color code: '", string.sub(line, startI, endI), "'.")
 				colorInt = COLORS.Normal
 			end
 		end
@@ -711,7 +755,7 @@ local function drawWindow()
 			if colorChangesAt[lineIdx] and colorChangesAt[lineIdx][charIdx] then
 				color = colorChangesAt[lineIdx][charIdx]
 				if type(color) ~= "number" then
-					Note("RossAsciiMap - Weird color value in colorChangesAt: ", colorChangesAt[lineIdx][charIdx])
+					Note("[RossAsciiMap] - Weird color value in colorChangesAt: ", colorChangesAt[lineIdx][charIdx])
 					color = COLORS.Normal
 				end
 			end
@@ -733,7 +777,7 @@ local function drawWindow()
 				for groupName,score in pairs(scoreList) do
 					local group = filterGroups[groupName]
 					if not group then
-						Note('[ASCII Map] Warning: No filter group defined for name: "' .. groupName .. '"')
+						Note('[RossAsciiMap] - No filter group defined for name: "' .. groupName .. '"')
 						group = filterGroups.default or DEFAULT_FILTER_GROUP
 					end
 					local _x, _y = x + group.ox, y + group.oy

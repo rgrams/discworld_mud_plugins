@@ -14,6 +14,9 @@ Shows the in-game ASCII map in a persistent miniwindow. You can adjust the font,
 
 [New Beta!] Can also show indicators for what and how many living things are in rooms on the map. By default it just shows a count of how many things are in each room, but you can set up custom filters and groups to score things differently or to show multiple indicators next to each room.
 
+You can use the alias or trigger: "`asciimap <enable/disable> <groupName>`" to enable or disable groups on the fly. You can specify any number of group names separated by spaces:
+> Example: `asciimap enable letters tasty avoid`
+
 #### Dependencies:
 * GMCP Interface Plugin.
 * Map Door Text Parser module.
