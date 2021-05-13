@@ -756,6 +756,8 @@ end
 
 function loadFilterGroupFont(winID, group) -- Is local--upvalue defined above.
 	group.fontID = "font_" .. group.name
+	group.fontFamily = group.fontFamily or "FixedSys"
+	group.fontSize = group.fontSize or 9
 	WindowFont(winID, group.fontID, group.fontFamily, group.fontSize)
 	group.fontMaxCharWidth = WindowFontInfo(winID, group.fontID, 7) -- Max character width.
 end
