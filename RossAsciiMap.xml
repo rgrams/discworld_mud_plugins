@@ -550,7 +550,6 @@ end
 --------------------------------------------------
 local function pickFont()
 	local fnt = utils.fontpicker(fontFamily, fontSize)
-	print(fnt)
 	if fnt then
 		fontFamily, fontSize = fnt.name, fnt.size
 		loadMapFont(winID, fontID, fontFamily, fontSize)
