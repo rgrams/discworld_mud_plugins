@@ -10,11 +10,11 @@ local customReplacers = {
 
 local THING_COUNT = "(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)"
 local MOVE_COUNT = "(one|two|three|four|five|six|seven)"
-local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west)"
+local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west|here)"
 local moveRegex = rex.new("(?:"..MOVE_COUNT.." )?"..DIRECTION, CASE_INSENSITIVE) -- Match a space ONLY if there's a number, but don't capture it.
 
 local numStrToNum = { [false] = 1, one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }
-local longDirToShort = { northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw", north = "n", south = "s", east = "e", west = "w" }
+local longDirToShort = { here = "here", northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw", north = "n", south = "s", east = "e", west = "w" }
 
 local MV = "<\\d \\w{1,2}>" -- Ex: "<1 nw>" -- NOTE: No captures.
 local moveSequenceRegex = rex.new("((?:(?:"..MV.."), )*)("..MV.." and )?("..MV..")")
@@ -22,7 +22,7 @@ local moveSequenceRegex = rex.new("((?:(?:"..MV.."), )*)("..MV.." and )?("..MV..
 local splitMoveSeqRegex = rex.new("(\\d) ([nsew]{1,2})(?=, |$)")
 
 local EXIT, EXIT_DIRS, EXIT_POS, VISION, VISION_POS, THING, THING_POS = 1, 2, 3, 4, 5, 6, 7 -- Chunk capture indices.
-local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from here|(\w[\w \-,]+) (?:is|are) <(.+?)>)]]
+local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,]+) (?:is|are) <(.+?)>)]]
 local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
 
 local function regexReplace(str, regex, matchFn)
@@ -66,6 +66,9 @@ end
 local function moveReplacer(match, captures)
    local num = numStrToNum[captures[1]] or 1
    local dir = longDirToShort[captures[2]]
+   if dir == "here" then
+      num, dir = 0, "n"
+   end
    return "<"..num.." "..dir..">"
 end
 
