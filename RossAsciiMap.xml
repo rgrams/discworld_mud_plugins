@@ -516,7 +516,7 @@ local function scoreMDTRooms(rooms)
 			local count = capt and capt[1] or 1
 			local wasCaughtByFilter = false
 			for i,filter in ipairs(entityFilters) do
-				if not disabledGroups[filter.group or "default"] then
+				if not disabledGroups[filter.group] then
 					if filter.regex:match(entityStr) then
 						wasCaughtByFilter = true
 						local groupName = filter.group or "default"
@@ -775,14 +775,16 @@ local function drawWindow()
 				-- Double dx and dy because rooms are every-other line on the ASCII map.
 				local x, y = ox + dx*2*gridX, oy - dy*2*gridY -- Subtract dy because we draw in +y = down coordinates.
 				for groupName,score in pairs(scoreList) do
-					local group = filterGroups[groupName]
-					if not group then
-						Note('[RossAsciiMap] - No filter group defined for name: "' .. groupName .. '"')
-						group = filterGroups.default or DEFAULT_FILTER_GROUP
+					if not disabledGroups[groupName] then -- Only really affects the default group, other disabled groups are simply not scored.
+						local group = filterGroups[groupName]
+						if not group then
+							Note('[RossAsciiMap] - No filter group defined for name: "' .. groupName .. '"')
+							group = filterGroups.default or DEFAULT_FILTER_GROUP
+						end
+						local _x, _y = x + group.ox, y + group.oy
+						local width = group.fontMaxCharWidth * tostring(score):len()
+						WindowText(winID, group.fontID, score, _x, _y, _x+width, _y+gridY, group.color)
 					end
-					local _x, _y = x + group.ox, y + group.oy
-					local width = group.fontMaxCharWidth * tostring(score):len()
-					WindowText(winID, group.fontID, score, _x, _y, _x+width, _y+gridY, group.color)
 				end
 			end
 		end
