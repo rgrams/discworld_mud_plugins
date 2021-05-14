@@ -1,6 +1,6 @@
 
 local prefix = 'room.writtenmap "'
-local suffix = '.\\n"'
+local suffix = '\\n"'
 
 local customReplacers = {
    {"(%w+) and white", "%1-and-white"},
@@ -8,7 +8,7 @@ local customReplacers = {
    {"MXP<.-MXP>", ""},
 }
 
-local THING_COUNT = "(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)"
+local THING_COUNT = "(?:(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen) )"
 local MOVE_COUNT = "(one|two|three|four|five|six|seven)"
 local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west|here)"
 local moveRegex = rex.new("(?:"..MOVE_COUNT.." )?"..DIRECTION, CASE_INSENSITIVE) -- Match a space ONLY if there's a number, but don't capture it.
@@ -112,7 +112,7 @@ local function addEntities(match, captures)
    table.insert(_entities, entStr)
 end
 
-local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."? ?(.+?)(?:, |$)")
+local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."?(.+?)(?:, |$)")
 
 local function parseChunk(chunk, captures)
    local chunkType = (captures[EXIT] or captures[VISION] or "thing")
@@ -120,9 +120,6 @@ local function parseChunk(chunk, captures)
 
    -- chunkType can be: "exit", "door", "vision", or "thing".
    if chunkType == "thing" then
-      -- chunkType = "<"..chunkType.."> "
-      -- print(chunkType..chunk)
-      -- print("  ", things, ",", pos, ",", dx, ",", dy)
       local thingStr = captures[THING]
       local posStr = captures[THING_POS]
 
