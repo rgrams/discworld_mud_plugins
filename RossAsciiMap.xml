@@ -589,44 +589,48 @@ local function setSpacing(i, axis)
 	refresh()
 end
 
-local menuItems = {}
+local menuItems = {} -- List of tables with button text and callback arguments.
+local menuItemTextList = {} -- List of button texts for adding to window
 
 local function menuItem(text, fn, ...)
 	table.insert(menuItems, {text, fn, ...})
 end
 
-menuItem("Set font...", pickFont)
-menuItem("Set X spacing...(cur: "..spacingX..")", setSpacing, "X")
-menuItem("Set Y spacing...(cur: "..spacingY..")", setSpacing, "Y")
-local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White"}
-menuItem(">Colors:")
-menuItem(">Defaults:")
-for i,colorName in ipairs(colorNames) do
-	menuItem("Reset "..colorName.." to default", resetColorToDefault, colorName)
-end
-menuItem("<")
-menuItem("-")
-for i,colorName in ipairs(colorNames) do
-	menuItem("Set "..colorName.." color...", pickColor, colorName)
-end
-menuItem("<")
-menuItem(">Living thing indicators:")
-menuItem("+Enabled", toggleMDTIndicators) -- Change the toggle on init, after settings are loaded.
-local MDTEnabledMenuIndex = #menuItems
-menuItem("-")
-menuItem("Show filters...", modifyFilter)
-menuItem("Add filter...", setFilter)
-menuItem("Delete filters...", deleteFilters)
-menuItem("Change filter order...", setFilterOrder)
-menuItem("-")
-menuItem("Show groups...", modifyGroup)
-menuItem("Add group...", setGroup)
-menuItem("Delete groups...", deleteGroups)
-menuItem("Toggle groups...", toggleGroups)
-menuItem("<")
+local function setupMenuItems()
+	menuItems, menuItemTextList = {}, {}
 
-local menuItemList = {} -- List of button texts for adding to window.
-for i,v in ipairs(menuItems) do  table.insert(menuItemList, v[1])  end
+	menuItem("Set font...", pickFont)
+	menuItem("Set X spacing...(cur: "..spacingX..")", setSpacing, "X")
+	menuItem("Set Y spacing...(cur: "..spacingY..")", setSpacing, "Y")
+	local colorNames = {"background", "border", "Normal", "Yellow", "Red", "Green", "Cyan", "Blue", "Desert", "Magenta", "White"}
+	menuItem(">Colors:")
+	menuItem(">Defaults:")
+	for i,colorName in ipairs(colorNames) do
+		menuItem("Reset "..colorName.." to default", resetColorToDefault, colorName)
+	end
+	menuItem("<")
+	menuItem("-")
+	for i,colorName in ipairs(colorNames) do
+		menuItem("Set "..colorName.." color...", pickColor, colorName)
+	end
+	menuItem("<")
+	menuItem(">Living thing indicators:")
+	local checkChar = MDTIndicatorsEnabled and "+" or ""
+	menuItem(checkChar .. "Enabled", toggleMDTIndicators)
+	menuItem("-")
+	menuItem("Show filters...", modifyFilter)
+	menuItem("Add filter...", setFilter)
+	menuItem("Delete filters...", deleteFilters)
+	menuItem("Change filter order...", setFilterOrder)
+	menuItem("-")
+	menuItem("Show groups...", modifyGroup)
+	menuItem("Add group...", setGroup)
+	menuItem("Delete groups...", deleteGroups)
+	menuItem("Toggle groups...", toggleGroups)
+	menuItem("<")
+
+	for i,v in ipairs(menuItems) do  table.insert(menuItemTextList, v[1])  end
+end
 
 local function menuItemClicked(winID, i, prefix, item)
 	local data = menuItems[i]
@@ -815,10 +819,8 @@ local function init()
 		winID, winRect.x, winRect.y, winRect.width, winRect.height, winRect.z,
 		nil, nil, nil, true, winLocked, menuItemClicked, drawWindow
 	)
-	window.addMenuItems(winID, 1, menuItemList)
-	if not MDTIndicatorsEnabled then
-		window.checkMenuItem(winID, MDTEnabledMenuIndex, MDTIndicatorsEnabled)
-	end
+	setupMenuItems()
+	window.addMenuItems(winID, 1, menuItemTextList)
 	loadMapFont(winID, fontID, fontFamily, fontSize)
 	loadFilterGroupFont(winID, DEFAULT_FILTER_GROUP)
 	for groupName,group in pairs(filterGroups) do
