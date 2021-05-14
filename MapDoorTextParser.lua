@@ -67,12 +67,16 @@ local _debugLevel -- Set for each call to parse().
 
 local function sumMove(match, captures)
    local _, _, capts = movementRegex:match(captures[1])
-   local dist, dir = capts[1], capts[2]
-   dist = numStrToNum[dist]
-   local dx, dy = dirStrToVec(dir)
-   _dx, _dy = _dx + dx*dist, _dy + dy*dist
-   dir = longDirToShort[dir]
-   table.insert(_moves, dist .. " " .. dir )
+   if capts then
+      local dist, dir = capts[1], capts[2]
+      dist = numStrToNum[dist]
+      local dx, dy = dirStrToVec(dir)
+      _dx, _dy = _dx + dx*dist, _dy + dy*dist
+      dir = longDirToShort[dir]
+      table.insert(_moves, dist .. " " .. dir )
+   else
+      Note("[Ross MDT Parser] - sumMove(): Unrecognized movement: '"..tostring(captures[1]).."'.")
+   end
 end
 
 local function addEntities(match, captures)
