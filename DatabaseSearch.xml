@@ -19,7 +19,7 @@
 	<!-- Lower `sequence` == higher priority. -->
 	<alias
 		name="adminTrigger"
-		match="^DatabaseSearch (help|max results|alias prefix)\s?(.*?)$"
+		match="^DatabaseSearch (help|max results|alias prefix|locate database)\s?(.*?)$"
 		enabled="y"
 		regexp="y"
 		sequence="97"
@@ -123,6 +123,8 @@ local maxResults = 40
 local mapDB
 local results = {}
 local lastSearch = {}
+
+local setAliasesEnabled
 
 -- Assemble lists of map IDs for each rough area for location filtering.
 local mapAreaKey = 7 -- Index for the map area code for each table in Quow's map data list.
@@ -625,7 +627,7 @@ end
 -- Enabling, Disabling, & Modifying Aliases:
 --------------------------------------------------
 -- Disabling aliases effectively disables all plugin features.
-local function setAliasesEnabled(enabled)
+function setAliasesEnabled(enabled) -- Upvalue defined above.
 	for aliasName,_ in ipairs(aliases) do
 		EnableAlias(aliasName, enabled)
 	end
@@ -681,6 +683,8 @@ function adminTrigger(name, line, wildcards)
 		setMaxResults(arg)
 	elseif command == "alias prefix" then
 		setAliasPrefix(arg)
+	elseif command == "locate database" then
+		pickFileAndLoadDatabase()
 	end
 end
 
@@ -688,7 +692,8 @@ end
 --------------------------------------------------
 local function init()
 	loadSettings()
-	local quowPluginFolder = GetPluginInfo(quowMapPluginID, 20)
+	local expectedQuowPluginFolder = GetInfo(56) .. "quow_plugins\\"
+	local quowPluginFolder = GetPluginInfo(quowMapPluginID, 20) or expectedQuowPluginFolder
 	if quowPluginFolder then
 		local quowMapsFolder = quowPluginFolder .. "maps\\"
 		local quowMapDatabasePath = quowPluginFolder .. "maps\\_quowmap_database.db"
@@ -696,8 +701,8 @@ local function init()
 	end
 	if not mapDB then
 		ColourNote(warningFGColor, warningBGColor, "Database-Search Plugin: Failed to automatically get database from Quow map.")
-		addLink("Click Here", "", SELF_ID, "pickFileAndLoadDatabase")
-		ColourNote(messageFGColor, messageBGColor, " to manually locate the '_quowmap_database.db' file. It was expected to be in the 'quow_plugins/maps' folder.")
+		-- NOTE: Hyperlink() just doesn't work when the plugin is enabled? The link doesn't show? It works anytime later though.
+		ColourNote(messageFGColor, messageBGColor, "Type \"DatabaseSearch locate database\" to manually locate the '_quowmap_database.db' file. It was expected to be in the 'quow_plugins/maps' folder.")
 		setAliasesEnabled(false)
 	end
 	ColourNote(messageFGColor, messageBGColor, 'Database Search Plugin loaded. Type "DatabaseSearch help" to see the commands list.')
