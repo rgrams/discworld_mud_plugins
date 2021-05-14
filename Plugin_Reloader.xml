@@ -67,7 +67,8 @@ function reloadPlugin(name, line, wildcards)
 	ColourNote("yellow", "", "Reload Plugin: " .. pluginName)
 	local err, msg = pcall(ReloadPlugin, pluginName)
 	local s = errors[msg] or ("Unknown Error: " .. tostring(msg))
-	ColourNote("yellow", "", "   " .. string.format(s, pluginName))
+	local msgColor = (msg == error_code.eOK) and "yellow" or "orangered"
+	ColourNote(msgColor, "", "   " .. string.format(s, pluginName))
 	if msg == error_code.eOK then  lastPlugin = pluginName  end
 end
 
