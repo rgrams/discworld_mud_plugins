@@ -2,111 +2,142 @@
 local prefix = 'room.writtenmap "'
 local suffix = '.\\n"'
 
-local NUMBER = "(one|two|three|four|five|six|seven|eight|nine|ten)?"
-local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west)"
-local MOVEMENT = NUMBER .. " ?" .. DIRECTION
-local numStrToNum = { [false] = 1, one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10 }
-local longDirToShort = { northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw", north = "n", south = "s", east = "e", west = "w" }
-
 local customReplacers = {
    {"(%w+) and white", "%1-and-white"},
    {"\\u001b%[%dz", ""},
    {"MXP<.-MXP>", ""},
 }
 
-local CASE_INSENSITIVE = rex.flags().CASELESS
+local THING_COUNT = "(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)"
+local MOVE_COUNT = "(one|two|three|four|five|six|seven)"
+local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west)"
+local moveRegex = rex.new("(?:"..MOVE_COUNT.." )?"..DIRECTION, CASE_INSENSITIVE) -- Match a space ONLY if there's a number, but don't capture it.
 
-local chunkRegex = rex.new(".*?(?:of|is|are).+?(?:, |\\.|$)")
+local numStrToNum = { [false] = 1, one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }
+local longDirToShort = { northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw", north = "n", south = "s", east = "e", west = "w" }
 
-local exitRegex = rex.new("^ ?(an exit|exits) ", CASE_INSENSITIVE)
-local doorRegex = rex.new("^ ?(a door|doors) ", CASE_INSENSITIVE)
-local visionRegex = rex.new("^ ?(the limit of your vision is) ", CASE_INSENSITIVE)
+local MV = "<\\d \\w{1,2}>" -- Ex: "<1 nw>" -- NOTE: No captures.
+local moveSequenceRegex = rex.new("((?:(?:"..MV.."), )*)("..MV.." and )?("..MV..")")
 
-local movementRegex = rex.new(MOVEMENT)
-local splitCommaSepRegex = rex.new("(.+?)(?:, |$)")
-local entityRegex = rex.new("(?:a |an |)"..NUMBER.." ?(.+?)(?:, | are | is |$)")
+local splitMoveSeqRegex = rex.new("(\\d) ([nsew]{1,2})(?=, |$)")
 
-local lastChunkRegex = rex.new(" and the limit of your vision is.+?from here$")
+local EXIT, EXIT_DIRS, EXIT_POS, VISION, VISION_POS, THING, THING_POS = 1, 2, 3, 4, 5, 6, 7 -- Chunk capture indices.
+local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from here|(\w[\w \-,]+) (?:is|are) <(.+?)>)]]
+local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
+
+local function regexReplace(str, regex, matchFn)
+   local overloadLimit = 1000
+   local startI = 1
+   local lastCharI = #str
+   local i = 0
+   while startI <= lastCharI do
+      i = i + 1
+      if i >= overloadLimit then  break  end
+      startCharI, endCharI, captures = regex:match(str, startI)
+      if startCharI then
+         local fullMatch = str:sub(startCharI, endCharI)
+         local repl = matchFn(fullMatch, captures)
+         if repl then
+            local pre = str:sub(1, startCharI - 1)
+            local post = str:sub(endCharI + 1, -1)
+            str = pre .. repl .. post
+            endCharI = startCharI + #repl
+            lastCharI = #str
+         end
+      end
+      startI = (endCharI or lastCharI) + 1
+   end
+   return str
+end
 
 local function dirStrToVec(dir)
-   if dir == "north" then  return 0, 1
-   elseif dir == "south" then  return 0, -1
-   elseif dir == "east" then  return 1, 0
-   elseif dir == "west" then  return -1, 0
-   elseif dir == "northeast" then  return 1, 1
-   elseif dir == "northwest" then  return -1, 1
-   elseif dir == "southeast" then  return 1, -1
-   elseif dir == "southwest" then  return -1, -1
+   if dir == "n" then  return 0, 1
+   elseif dir == "s" then  return 0, -1
+   elseif dir == "e" then  return 1, 0
+   elseif dir == "w" then  return -1, 0
+   elseif dir == "ne" then  return 1, 1
+   elseif dir == "nw" then  return -1, 1
+   elseif dir == "se" then  return 1, -1
+   elseif dir == "sw" then  return -1, -1
    end
 end
 
-local function getChunkType(chunk)
-   local startI, endI, captures = exitRegex:match(chunk)
-   if captures then
-      local isPlural = captures[1] == "exits"
-      return "exit", isPlural
-   end
-   startI, endI, captures = doorRegex:match(chunk)
-   if captures then
-      local isPlural = captures[1] == "doors"
-      return "door", isPlural
-   end
-   startI, endI, captures = visionRegex:match(chunk)
-   if captures then
-      return "vision"
-   end
-   return "entity"
+-- Replace words with abbreviations, inside < >.
+local function moveReplacer(match, captures)
+   local num = numStrToNum[captures[1]] or 1
+   local dir = longDirToShort[captures[2]]
+   return "<"..num.." "..dir..">"
+end
+
+-- Replace
+local function moveSequenceReplacer(match, captures)
+   local list, moveAnd, last = captures[1], captures[2], captures[3]
+   list = list or ""
+   moveAnd = moveAnd and moveAnd:gsub(" and", ",") or ""
+   local all = list..moveAnd..last
+   all = all:gsub("[<>]", "")
+   return "<"..all..">"
 end
 
 -- Temporary variables so regex match functions can be static.
+local _rooms
 local _entities
 local _moves
 local _dx, _dy
 
 local _debugLevel -- Set for each call to parse().
 
-local function sumMove(match, captures)
-   local _, _, capts = movementRegex:match(captures[1])
-   if capts then
-      local dist, dir = capts[1], capts[2]
-      dist = numStrToNum[dist]
-      local dx, dy = dirStrToVec(dir)
-      _dx, _dy = _dx + dx*dist, _dy + dy*dist
-      dir = longDirToShort[dir]
-      table.insert(_moves, dist .. " " .. dir )
-   else
-      Note("[Ross MDT Parser] - sumMove(): Unrecognized movement: '"..tostring(captures[1]).."'.")
-   end
+local function sumMove(match, captures) -- Full match is the abbreviation: "1 nw", etc.
+   local dist, dir = tonumber(captures[1]), captures[2]
+   local dx, dy = dirStrToVec(dir)
+   _dx, _dy = _dx + dx*dist, _dy + dy*dist
+   table.insert(_moves, match)
+end
+
+local function getMoveSequenceFromString(moveSeqStr)
+   _dx, _dy = 0, 0
+   _moves = {}
+   splitMoveSeqRegex:gmatch(moveSeqStr, sumMove)
+   return _moves, _dx, _dy
 end
 
 local function addEntities(match, captures)
    local num = numStrToNum[captures[1]]
    local entStr = captures[2]
    if num > 1 then  entStr = num .. " " .. entStr  end
+   _entities = _entities or {}
    table.insert(_entities, entStr)
 end
 
-local function parseEntityChunk(chunk)
-   chunk = chunk:gsub(" and ", ", ")
-   local startI, endI, captures = movementRegex:match(chunk)
-   if captures then
-      local thingStr = string.sub(chunk, 1, startI - 1)
-      local locationStr = string.sub(chunk, startI)
+local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."? ?(.+?)(?:, |$)")
 
-      -- Location: Sum up displacement from player pos.
-      _dx, _dy = 0, 0
-      _moves = {}
-      splitCommaSepRegex:gmatch(locationStr, sumMove)
+local function parseChunk(chunk, captures)
+   local chunkType = (captures[EXIT] or captures[VISION] or "thing")
+   if captures[EXIT] then  chunkType = chunkType:lower()  end -- "Exit"/"Door", etc. can be the first word in the whole packet.
 
-      -- Entities: Make a clean list of entities.
-      _entities = {}
+   -- chunkType can be: "exit", "door", "vision", or "thing".
+   if chunkType == "thing" then
+      -- chunkType = "<"..chunkType.."> "
+      -- print(chunkType..chunk)
+      -- print("  ", things, ",", pos, ",", dx, ",", dy)
+      local thingStr = captures[THING]
+      local posStr = captures[THING_POS]
+
+      getMoveSequenceFromString(posStr)
+
+      thingStr = thingStr:gsub(" and ", ", ")
+      _entities = nil -- Clear data from last use.
       entityRegex:gmatch(thingStr, addEntities)
 
-		if _debugLevel then
-      	local str = string.format("%s:  %s", table.concat(_moves, ", "), table.concat(_entities, ", "))
-      	print(str)
-		end
-      return _entities, _moves, _dx, _dy
+      if _debugLevel then
+         local str = string.format("%s:  %s", table.concat(_moves, ", "), table.concat(_entities, ", "))
+         print(str)
+      end
+
+      if _entities and #_entities > 0 then
+         local roomData = { entities = _entities, moves = _moves, dx = _dx, dy = _dy }
+         table.insert(_rooms, roomData)
+      end
    end
 end
 
@@ -116,36 +147,23 @@ local function parse(str, debugLevel)
    str = str:gsub(prefix, "")
    str = str:gsub(suffix, "")
    str = str:gsub('"', "")
-   do
-      local startI, endI = lastChunkRegex:match(str)
-      if startI then
-         str = str:sub(1, startI - 1) .. "," .. str:sub(startI + 4)
-      end
-   end
-   str = str:gsub(" from here", "")
+
    for i,v in ipairs(customReplacers) do
       str = str:gsub(v[1], v[2])
    end
 
    if _debugLevel == 2 then  print(str)  end
 
-   local chunks = {}
-   chunkRegex:gmatch(str, function(m)  table.insert(chunks, m)  end)
+   _rooms = {} -- List of room entries: { entities, moves, dx, dy }
+   -- (Store at higher scope so parseChunk() can access it.)
 
-   local rooms = {} -- List of room entries: { entities, moves, dx, dy }
+   -- First replace directional stuff with sequences that are easy to deal with.
+   str = regexReplace(str, moveRegex, moveReplacer) -- "two northwest" --> "<2 nw>"
+   str = regexReplace(str, moveSequenceRegex, moveSequenceReplacer)
+   -- Now we can detect the different chunks very specifically without extra junk in the way.
+   chunkRegex:gmatch(str, parseChunk)
 
-   for i,chunk in pairs(chunks) do
-      local chunkType, isPlural = getChunkType(chunk)
-
-      if chunkType == "entity" then
-         local entities, moves, dx, dy = parseEntityChunk(chunk)
-         if entities and #entities > 0 then
-            local roomData = { entities = entities, moves = moves, dx = dx, dy = dy }
-            table.insert(rooms, roomData)
-         end
-      end
-   end
-   return rooms
+   return _rooms
 end
 
 return parse
