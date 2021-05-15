@@ -794,6 +794,94 @@ local function drawWindow()
 	end
 end
 
+-- Tooltip - Show Things Under Cursor:
+--------------------------------------------------
+local floor = math.floor
+
+local function round(x, incr)
+	if incr then
+		return floor(x/incr + 0.5)*incr
+	end
+	return floor(x + 0.5)
+end
+
+local function windowMousePosToRoomPos(mx, my)
+	local gridX, gridY = fontCharWidth + spacingX, fontHeight + spacingY
+	local x, y = mx - winRect.width/2, my - winRect.height/2
+	return round(x/gridX/2), -round(y/gridY/2)
+end
+
+local function getThingsInRoom(rx, ry)
+	if not curMDTData then  return  end
+
+	for i,room in ipairs(curMDTData) do
+		if room.dx == rx and room.dy == ry then
+			return room.entities
+		end
+	end
+end
+
+local tooltipRX, tooltipRY, tooltipText
+local tooltipWinID = SELF_ID .. "tooltip"
+local tooltipFont, tooltipFontSize = "FixedSys", 9
+local tooltipFontHeight
+local padding = 2
+local tooltipBorderColor = RGBToInt(80)
+local tooltipTextColor = RGBToInt(160)
+local tooltipIsVisible = false
+local tooltipW, tooltipH
+
+local function drawTooltip()
+	WindowRectOp(tooltipWinID, 2, 0, 0, tooltipW, tooltipH, 0) -- Draw background
+	WindowRectOp(tooltipWinID, 1, 0, 0, tooltipW, tooltipH, tooltipBorderColor) -- Draw border
+	WindowText(tooltipWinID, "font", tooltipText, padding, padding, tooltipW, tooltipH, tooltipTextColor)
+	Redraw()
+end
+
+local function showTooltip(x, y, rx, ry, text)
+	tooltipIsVisible = true
+	tooltipRX, tooltipRY, tooltipText = rx, ry, text
+	tooltipW = WindowTextWidth(tooltipWinID, "font", text) + padding*2
+	tooltipH = tooltipFontHeight + padding*2
+	WindowResize(tooltipWinID, tooltipW, tooltipH, 0)
+	local gridX, gridY = fontCharWidth + spacingX, fontHeight + spacingY
+	local winX, winY = WindowInfo(winID, 1), WindowInfo(winID, 2)
+	local x = winX + winRect.width/2 + rx*2 * gridX
+	local y = winY + winRect.height/2 - ry*2 * gridY
+	WindowPosition(tooltipWinID, x, y - tooltipH*1.5, 5, 2)
+
+	WindowShow(tooltipWinID, true)
+	WindowSetZOrder(tooltipWinID, winRect.z + 1)
+
+	drawTooltip()
+end
+
+local function hideTooltip()
+	tooltipIsVisible = false
+	WindowShow(tooltipWinID, false)
+	tooltipRX, tooltipRY, tooltipText = nil, nil, nil
+end
+
+function OnPluginMouseMoved(x, y, mw)
+	if mw == winID then
+		local rx, ry = windowMousePosToRoomPos(WindowInfo(winID, 14), WindowInfo(winID, 15))
+
+		local thingList = getThingsInRoom(rx, ry)
+		local text
+		if thingList and #thingList > 0 then
+			text = table.concat(thingList, ", ")
+		end
+
+		if tooltipIsVisible and not text then
+			hideTooltip()
+		elseif text then
+			showTooltip(x, y, rx, ry, text)
+		end
+	else
+		if tooltipIsVisible then  hideTooltip()  end
+	end
+end
+
 -- Setup & Breakdown:
 --------------------------------------------------
 function loadMapFont(winID, fontID, fontFamily, fontSize) -- Is local--upvalue defined above.
@@ -826,12 +914,18 @@ local function init()
 		loadFilterGroupFont(winID, group)
 	end
 	refresh()
+
+	-- Tooltip.
+	WindowCreate(tooltipWinID, 0, 0, 100, 25, 5, 2, 0)
+	WindowFont(tooltipWinID, "font", tooltipFont, tooltipFontSize)
+	tooltipFontHeight = WindowFontInfo(tooltipWinID, "font", 1)
 end
 
 local function final()
 	winRect.x, winRect.y, winRect.width, winRect.height, winRect.z = window.getRect(winID)
 	winLocked = window.getLocked(winID)
 	WindowDelete(winID)
+	WindowDelete(tooltipWinID)
 	CallPlugin(GMCP_INTERFACE_ID, "unsubscribe", SELF_ID, "room.map", "room.writtenmap")
 end
 
