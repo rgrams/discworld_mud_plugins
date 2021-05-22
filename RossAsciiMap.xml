@@ -501,6 +501,10 @@ end
 
 -- MDT Data Handling:
 --------------------------------------------------
+local function printLastMDTPacket()
+	if lastMDTPacket then  print(lastMDTPacket)  end
+end
+
 local function toggleMDTIndicators(i)
 	MDTIndicatorsEnabled = not MDTIndicatorsEnabled
 	window.checkMenuItem(winID, i, MDTIndicatorsEnabled)
@@ -616,6 +620,7 @@ local function setupMenuItems()
 	menuItem(">Living thing indicators:")
 	local checkChar = MDTIndicatorsEnabled and "+" or ""
 	menuItem(checkChar .. "Enabled", toggleMDTIndicators)
+	menuItem("Output last MDT packet (for debug)", printLastMDTPacket)
 	menuItem("-")
 	menuItem("Show filters...", modifyFilter)
 	menuItem("Add filter...", setFilter)
