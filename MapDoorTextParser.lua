@@ -22,7 +22,7 @@ local moveSequenceRegex = rex.new("((?:(?:"..MV.."), )*)("..MV.." and )?("..MV..
 local splitMoveSeqRegex = rex.new("(\\d) ([nsew]{1,2})(?=, |$)")
 
 local EXIT, EXIT_DIRS, EXIT_POS, VISION, VISION_POS, THING, THING_POS = 1, 2, 3, 4, 5, 6, 7 -- Chunk capture indices.
-local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,]+) (?:is|are) <(.+?)>)]]
+local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,\(\)]+) (?:is|are) <(.+?)>)]]
 local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
 
 local function regexReplace(str, regex, matchFn)
@@ -152,7 +152,7 @@ local function parse(str, debugLevel)
       str = str:gsub(v[1], v[2])
    end
 
-   if _debugLevel == 2 then  print(str)  end
+   if _debugLevel and _debugLevel >= 2 then  print(str)  end
 
    _rooms = {} -- List of room entries: { entities, moves, dx, dy }
    -- (Store at higher scope so parseChunk() can access it.)
@@ -160,6 +160,7 @@ local function parse(str, debugLevel)
    -- First replace directional stuff with sequences that are easy to deal with.
    str = regexReplace(str, moveRegex, moveReplacer) -- "two northwest" --> "<2 nw>"
    str = regexReplace(str, moveSequenceRegex, moveSequenceReplacer)
+   if _debugLevel == 3 then  print(str)  end
    -- Now we can detect the different chunks very specifically without extra junk in the way.
    chunkRegex:gmatch(str, parseChunk)
 
