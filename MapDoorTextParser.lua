@@ -8,6 +8,8 @@ local customReplacers = {
    {"MXP<.-MXP>", ""},
 }
 
+local CASE_INSENSITIVE = rex.flags().CASELESS
+
 local THING_COUNT = "(?:(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen) )"
 local MOVE_COUNT = "(one|two|three|four|five|six|seven)"
 local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west|here)"
@@ -112,7 +114,7 @@ local function addEntities(match, captures)
    table.insert(_entities, entStr)
 end
 
-local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."?(.+?)(?:, |$)")
+local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."?(.+?)(?:, |$)", CASE_INSENSITIVE)
 
 local function parseChunk(chunk, captures)
    local chunkType = (captures[EXIT] or captures[VISION] or "thing")
