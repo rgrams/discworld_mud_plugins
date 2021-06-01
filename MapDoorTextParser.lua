@@ -107,7 +107,12 @@ local function getMoveSequenceFromString(moveSeqStr)
 end
 
 local function addEntities(match, captures)
+   if captures[1] then  captures[1] = string.lower(captures[1])  end
    local num = numStrToNum[captures[1]]
+   if type(num) ~= "number" then
+      print("WARNING: MDT-Parser.addEntities - Number capture seems to have failed. Invalid number: '"..tostring(num).."' for match: '"..match.."'")
+      num = 1
+   end
    local entStr = captures[2]
    if num > 1 then  entStr = num .. " " .. entStr  end
    _entities = _entities or {}
