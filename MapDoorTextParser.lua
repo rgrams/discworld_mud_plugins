@@ -4,6 +4,7 @@ local suffix = '\\n"'
 
 local customReplacers = {
    {"(%w+) and white", "%1-and-white"},
+   {"(%w+) and yellow", "%1-and-yellow"},
    {"\\u001b%[%dz", ""},
    {"MXP<.-MXP>", ""},
 }
