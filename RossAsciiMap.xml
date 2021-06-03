@@ -856,7 +856,8 @@ local function showTooltip(x, y, rx, ry, text)
 	WindowPosition(tooltipWinID, x, y - tooltipH*1.5, 5, 2)
 
 	WindowShow(tooltipWinID, true)
-	WindowSetZOrder(tooltipWinID, winRect.z + 1)
+	local mapWindowZ = WindowInfo(winID, 22)
+	WindowSetZOrder(tooltipWinID, mapWindowZ + 1) -- NOTE: winRect.z is only set when settings ore loaded or saved.
 
 	drawTooltip()
 end
