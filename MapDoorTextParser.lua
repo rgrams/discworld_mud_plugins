@@ -25,7 +25,7 @@ local moveSequenceRegex = rex.new("((?:(?:"..MV.."), )*)("..MV.." and )?("..MV..
 local splitMoveSeqRegex = rex.new("(\\d) ([nsew]{1,2})(?=, |$)")
 
 local EXIT, EXIT_DIRS, EXIT_POS, VISION, VISION_POS, THING, THING_POS = 1, 2, 3, 4, 5, 6, 7 -- Chunk capture indices.
-local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,\(\)]+) (?:is|are) <(.+?)>)]]
+local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,\(\)']+) (?:is|are) <(.+?)>)]]
 local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
 
 local function regexReplace(str, regex, matchFn)
