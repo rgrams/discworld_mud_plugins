@@ -36,7 +36,7 @@ local function regexReplace(str, regex, matchFn)
    while startI <= lastCharI do
       i = i + 1
       if i >= overloadLimit then  break  end
-      startCharI, endCharI, captures = regex:match(str, startI)
+      local startCharI, endCharI, captures = regex:match(str, startI)
       if startCharI then
          local fullMatch = str:sub(startCharI, endCharI)
          local repl = matchFn(fullMatch, captures)
