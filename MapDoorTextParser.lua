@@ -3,11 +3,24 @@ local prefix = 'room.writtenmap "'
 local suffix = '\\n"'
 
 local customReplacers = {
-   {"(%w+) and white", "%1-and-white"},
-   {"(%w+) and yellow", "%1-and-yellow"},
-   {"\\u001b%[%dz", ""},
-   {"MXP<.-MXP>", ""},
+	{"(%w+) and white", "%1-and-white"},
+	{"(%w+) and yellow", "%1-and-yellow"},
 }
+
+-- Up-scoped values for regex replacer and other functions to grab.
+local _debugLevel -- Set for each call to parse().
+local _playerPrefix
+local _colorOption
+
+local function hexToAnsi(hex)
+	local rgb = ColourNameToRGB(hex)
+	-- How to split a single-int-rgb value into its components if you have absolutely no clue what you're doing.
+	local r = rgb % 256
+	local g = (rgb - r) % 65536 / 256
+	local b = bit.shr(rgb, 16)
+
+	return ANSI(38, 2, r, g, b) -- 38;2 is the 24-bit foreground color ANSI sequence.
+end
 
 local CASE_INSENSITIVE = rex.flags().CASELESS
 
@@ -27,6 +40,9 @@ local splitMoveSeqRegex = rex.new("(\\d) ([nsew]{1,2})(?=, |$)")
 local EXIT, EXIT_DIRS, EXIT_POS, VISION, VISION_POS, THING, THING_POS = 1, 2, 3, 4, 5, 6, 7 -- Chunk capture indices.
 local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,\(\)']+) (?:is|are) <(.+?)>)]]
 local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
+
+-- MXP color can be a hex color: "C #d7d7d7" or a named color: "White".
+local playerColorRegex = rex.new([[\\u001b\[4zMXP<(?:C )?(#[0-9a-f]{6}|[A-Z]\w+)MXP>]])
 
 local function regexReplace(str, regex, matchFn)
    local overloadLimit = 1000
@@ -65,6 +81,22 @@ local function dirStrToVec(dir)
    end
 end
 
+-- Replacer for MXP hex colors before player names.
+local function playerColorReplacer(match, captures)
+	local replacement = ""
+	if _playerPrefix then
+		replacement = _playerPrefix
+	end
+	if _colorOption == "ansi" then
+		local hexColor = captures[1]
+		local ansiColor = hexToAnsi(hexColor)
+		replacement = ansiColor .. replacement
+	elseif _colorOption == "unmodified" then
+		replacement = match .. replacement
+	end
+	return replacement
+end
+
 -- Replace words with abbreviations, inside < >.
 local function moveReplacer(match, captures)
    local num = numStrToNum[captures[1]] or 1
@@ -90,8 +122,6 @@ local _rooms
 local _entities
 local _moves
 local _dx, _dy
-
-local _debugLevel -- Set for each call to parse().
 
 local function sumMove(match, captures) -- Full match is the abbreviation: "1 nw", etc.
    local dist, dir = tonumber(captures[1]), captures[2]
@@ -149,18 +179,37 @@ local function parseChunk(chunk, captures)
    end
 end
 
-local function parse(str, debugLevel)
+local isValidColorOption = { strip = false, ansi = true, unmodified = true }
+
+local function parse(str, debugLevel, playerPrefix, colorOption)
 	_debugLevel = debugLevel -- any-truthy-value --> print each room, 2 --> print whole text and each room.
+	_playerPrefix = playerPrefix
+	colorOption = isValidColorOption[colorOption] and colorOption or nil
+	_colorOption = colorOption
 
    str = str:gsub(prefix, "")
    str = str:gsub(suffix, "")
    str = str:gsub('"', "")
 
+	if not playerPrefix and not colorOption then -- Default: just strip out player colors.
+		str = str:gsub("\\u001b%[%dz", "") -- NOTE: \u001b == Unicode Escape Sequence.
+		str = str:gsub("MXP<.-MXP>", "")
+	else
+		str = regexReplace(str, playerColorRegex, playerColorReplacer)
+		if colorOption == "ansi" then
+			-- If converting color codes to ANSI, make sure it's reset first or it looks like we messed up if a color is already set (like the standard Note blue).
+			str = ANSI(0) .. str
+			str = str:gsub("\\u001b%[3z", ANSI(0))
+		elseif not colorOption then
+			str = str:gsub("\\u001b%[3z", "")
+		end
+	end
+
    for i,v in ipairs(customReplacers) do
       str = str:gsub(v[1], v[2])
    end
 
-   if _debugLevel and _debugLevel >= 2 then  print(str)  end
+   if _debugLevel and _debugLevel >= 2 then  AnsiNote(str)  end
 
    _rooms = {} -- List of room entries: { entities, moves, dx, dy }
    -- (Store at higher scope so parseChunk() can access it.)
