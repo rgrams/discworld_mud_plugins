@@ -48,10 +48,10 @@ local function regexReplace(str, regex, matchFn)
    local overloadLimit = 1000
    local startI = 1
    local lastCharI = #str
-   local i = 0
-   while startI <= lastCharI do
-      i = i + 1
-      if i >= overloadLimit then  break  end
+   local iter = 0
+   repeat
+      iter = iter + 1
+      if iter >= overloadLimit then  print("regexReplace - HIT OVERLOAD LIMIT")  break  end
       local startCharI, endCharI, captures = regex:match(str, startI)
       if startCharI then
          local fullMatch = str:sub(startCharI, endCharI)
@@ -64,8 +64,8 @@ local function regexReplace(str, regex, matchFn)
             lastCharI = #str
          end
       end
-      startI = (endCharI or lastCharI) + 1
-   end
+      startI = (endCharI or lastCharI)
+   until startI >= lastCharI
    return str
 end
 
