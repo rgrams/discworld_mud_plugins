@@ -99,6 +99,7 @@ local hexRegex = rex.new(".*? (#[0-9a-f]{6})") -- MXP<C #ff8700MXP>
 local lastMapPacket, lastMDTPacket-- Save last raw packet string to disk so we can show something on load.
 
 local MDTIndicatorsEnabled = true
+local MDTPlayerPrefix = "P)"
 local entityFilters = {}
 local DEFAULT_FILTER_GROUP = {
 	name = "default",
@@ -144,6 +145,8 @@ local function loadSettings()
 	local MDTEnabled = loadVar("MDTIndicatorsEnabled")
 	if MDTEnabled then  MDTIndicatorsEnabled = toboolean(MDTEnabled)  end
 
+	MDTPlayerPrefix = loadVar("MDTPlayerPrefix") or MDTPlayerPrefix
+
 	local filters = loadVar("entityFilters")
 	if filters then
 		entityFilters = json.decode(filters)
@@ -183,6 +186,8 @@ local function saveSettings()
 
 	saveVar("MDTIndicatorsEnabled", MDTIndicatorsEnabled)
 
+	saveVar("MDTPlayerPrefix", MDTPlayerPrefix, "")
+
 	-- Save custom entity filters.
 	if next(entityFilters) then
 		-- Can't save regex object, so make a copy of the filters without it.
@@ -219,6 +224,16 @@ end
 --------------------------------------------------
 local curMDTData
 local getCountRegex = rex.new("^(\\d+)")
+
+local function setPlayerPrefix()
+	local msg = [[The text you enter will be inserted before each player name so you can have a custom filter for them.
+If you put in something weird like " and ", "four ", or "one northwest ", then you'll break things.]]
+	local prefix = utils.inputbox(msg, "Select Player Name Prefix", MDTPlayerPrefix)
+	if prefix then
+		MDTPlayerPrefix = prefix
+		refresh()
+	end
+end
 
 local function addFilter(pattern, score, group, keepEvaluating, doesIgnoreCase)
 	local regexFlags = doesIgnoreCase and CASE_INSENSITIVE or nil
@@ -621,6 +636,7 @@ local function setupMenuItems()
 	local checkChar = MDTIndicatorsEnabled and "+" or ""
 	menuItem(checkChar .. "Enabled", toggleMDTIndicators)
 	menuItem("Output last MDT packet (for debug)", printLastMDTPacket)
+	menuItem("Set player name prefix...(cur: "..MDTPlayerPrefix..")", setPlayerPrefix)
 	menuItem("-")
 	menuItem("Show filters...", modifyFilter)
 	menuItem("Add filter...", setFilter)
@@ -701,7 +717,7 @@ function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
 		lastMDTPacket = dataStr
 		if MDTIndicatorsEnabled then
-			curMDTData = parseMDT(dataStr) -- Gets a list of rooms with things in them.
+			curMDTData = parseMDT(dataStr, nil, MDTPlayerPrefix) -- Gets a list of rooms with things in them.
 			scoreMDTRooms(curMDTData)
 			makeMDTArraymap(curMDTData)
 		end
