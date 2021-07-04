@@ -231,6 +231,7 @@ If you put in something weird like " and ", "four ", or "one northwest ", then y
 	local prefix = utils.inputbox(msg, "Select Player Name Prefix", MDTPlayerPrefix)
 	if prefix then
 		MDTPlayerPrefix = prefix
+		window.setMenuItem(winID, 34, "Set player name prefix...(cur: "..MDTPlayerPrefix..")")
 		refresh()
 	end
 end
