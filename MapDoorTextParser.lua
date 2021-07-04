@@ -24,6 +24,9 @@ end
 
 local CASE_INSENSITIVE = rex.flags().CASELESS
 
+-- MXP color can be a hex color: "C #d7d7d7" or a named color: "White".
+local playerColorRegex = rex.new([[\\u001b\[4zMXP<(?:C )?(#[0-9a-f]{6}|[A-Z]\w+)MXP>]])
+
 local THING_COUNT = "(?:(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen) )"
 local MOVE_COUNT = "(one|two|three|four|five|six|seven)"
 local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west|here)"
@@ -32,17 +35,22 @@ local moveRegex = rex.new("(?:"..MOVE_COUNT.." )?"..DIRECTION, CASE_INSENSITIVE)
 local numStrToNum = { [false] = 1, one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }
 local longDirToShort = { here = "here", northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw", north = "n", south = "s", east = "e", west = "w" }
 
-local MV = "<\\d \\w{1,2}>" -- Ex: "<1 nw>" -- NOTE: No captures.
-local moveSequenceRegex = rex.new("((?:(?:"..MV.."), )*)("..MV.." and )?("..MV..")")
-
+local MOVE = "<\\d \\w{1,2}>" -- Ex: "<1 nw>" -- NOTE: No captures.
+local moveSequenceRegex = rex.new("((?:(?:"..MOVE.."), )*)("..MOVE.." and )?("..MOVE..")")
 local splitMoveSeqRegex = rex.new("(\\d) ([nsew]{1,2})(?=, |$)")
 
-local EXIT, EXIT_DIRS, EXIT_POS, VISION, VISION_POS, THING, THING_POS = 1, 2, 3, 4, 5, 6, 7 -- Chunk capture indices.
-local CHUNK = [[(?:(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>|(?:and )?the limit of your (vision) is <(.+?)> from <0 n>|(\w[\w \-,\(\)']+) (?:is|are) <(.+?)>)]]
-local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
+local BOUNDARY_JUNK = [[(?: and |, |.)]] -- Chunks will end with an [[ and ]], [[, ]], or [[.]] that we don't need but don't want to leave behind.
+local EXIT_CHUNK = [[(?:a |an )?(exit|door)s? <(.+?)> of <(.+?)>]] .. BOUNDARY_JUNK
+local VISION_CHUNK = [[the limit of your vision is (?:<(.+?)> from )?<0 n>]] .. BOUNDARY_JUNK -- Must match: "The limit of your vision is here."
+local ENTITY_CHUNK = [[(.+?) (?:is|are) <(.+?)>]] .. BOUNDARY_JUNK -- Once other chunks are filtered out, this can be very broad.
+local exitChunkRegex = rex.new(EXIT_CHUNK, CASE_INSENSITIVE)
+local visionChunkRegex = rex.new(VISION_CHUNK, CASE_INSENSITIVE)
+local entityChunkRegex = rex.new(ENTITY_CHUNK, CASE_INSENSITIVE)
 
--- MXP color can be a hex color: "C #d7d7d7" or a named color: "White".
-local playerColorRegex = rex.new([[\\u001b\[4zMXP<(?:C )?(#[0-9a-f]{6}|[A-Z]\w+)MXP>]])
+local splitEntitySeqRegex = rex.new("(?:a |an |)"..THING_COUNT.."?(.+?)(?:, |$)", CASE_INSENSITIVE)
+
+-- Chunk capture indices:
+local THING, THING_POS = 1, 2 -- For entity chunks.
 
 local function regexReplace(str, regex, matchFn)
 	local overloadLimit = 1000
@@ -97,7 +105,7 @@ local function playerColorReplacer(match, captures)
 	return replacement
 end
 
--- Replace words with abbreviations, inside < >.
+-- Replace words with abbreviations, inside < >. Example: "two northwest" --> "<2 nw>"
 local function moveReplacer(match, captures)
 	local num = numStrToNum[captures[1]] or 1
 	local dir = longDirToShort[captures[2]]
@@ -107,7 +115,8 @@ local function moveReplacer(match, captures)
 	return "<"..num.." "..dir..">"
 end
 
--- Replace
+-- Merge a sequence of moves into a single list inside < >.
+-- Example <1 n>, <2 nw>, <1 n> and <1 w> --> <1 n, 2 nw, 1 n, 1 w>
 local function moveSequenceReplacer(match, captures)
 	local list, moveAnd, last = captures[1], captures[2], captures[3]
 	list = list or ""
@@ -137,6 +146,14 @@ local function getMoveSequenceFromString(moveSeqStr)
 	return _moves, _dx, _dy
 end
 
+local function replaceExitChunk(match, captures)
+	return ""
+end
+
+local function replaceVisionChunk(match, captures)
+	return ""
+end
+
 local function addEntities(match, captures)
 	if captures[1] then  captures[1] = string.lower(captures[1])  end
 	local num = numStrToNum[captures[1]]
@@ -150,32 +167,24 @@ local function addEntities(match, captures)
 	table.insert(_entities, entStr)
 end
 
-local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."?(.+?)(?:, |$)", CASE_INSENSITIVE)
+local function parseEntityChunk(match, captures)
+	local thingStr = captures[THING]
+	local posStr = captures[THING_POS]
 
-local function parseChunk(chunk, captures)
-	local chunkType = (captures[EXIT] or captures[VISION] or "thing")
-	if captures[EXIT] then  chunkType = chunkType:lower()  end -- "Exit"/"Door", etc. can be the first word in the whole packet.
+	getMoveSequenceFromString(posStr)
 
-	-- chunkType can be: "exit", "door", "vision", or "thing".
-	if chunkType == "thing" then
-		local thingStr = captures[THING]
-		local posStr = captures[THING_POS]
+	thingStr = thingStr:gsub(" and ", ", ")
+	_entities = nil -- Clear data from last use.
+	splitEntitySeqRegex:gmatch(thingStr, addEntities)
 
-		getMoveSequenceFromString(posStr)
+	if _debugLevel then
+		local str = string.format("%s:  %s", table.concat(_moves, ", "), table.concat(_entities, ", "))
+		print(str)
+	end
 
-		thingStr = thingStr:gsub(" and ", ", ")
-		_entities = nil -- Clear data from last use.
-		entityRegex:gmatch(thingStr, addEntities)
-
-		if _debugLevel then
-			local str = string.format("%s:  %s", table.concat(_moves, ", "), table.concat(_entities, ", "))
-			print(str)
-		end
-
-		if _entities and #_entities > 0 then
-			local roomData = { entities = _entities, moves = _moves, dx = _dx, dy = _dy }
-			table.insert(_rooms, roomData)
-		end
+	if _entities and #_entities > 0 then
+		local roomData = { entities = _entities, moves = _moves, dx = _dx, dy = _dy }
+		table.insert(_rooms, roomData)
 	end
 end
 
@@ -192,6 +201,7 @@ local function parse(str, debugLevel, playerPrefix, colorOption)
 	str = str:gsub(suffix, "")
 	str = str:gsub('"', "")
 
+	-- Handle player colors and prefix.
 	if not playerPrefix and not colorOption then -- Default: just strip out player colors.
 		str = str:gsub("\\u001b%[%dz", "") -- NOTE: \u001b == Unicode Escape Sequence.
 		str = str:gsub("MXP<.-MXP>", "")
@@ -217,10 +227,14 @@ local function parse(str, debugLevel, playerPrefix, colorOption)
 
 	-- First replace directional stuff with sequences that are easy to deal with.
 	str = regexReplace(str, moveRegex, moveReplacer) -- "two northwest" --> "<2 nw>"
-	str = regexReplace(str, moveSequenceRegex, moveSequenceReplacer)
-	if _debugLevel == 3 then  print(str)  end
-	-- Now we can detect the different chunks very specifically without extra junk in the way.
-	chunkRegex:gmatch(str, parseChunk)
+	str = regexReplace(str, moveSequenceRegex, moveSequenceReplacer) -- "<2 nw>, <1 n> and <1 w>" --> "<2 nw, 1 n, 1 w>"
+
+	if _debugLevel == 3 then  AnsiNote("\n"..str)  end
+	-- Now we can detect the different chunks more specifically without extra junk in the way.
+
+	str = regexReplace(str, exitChunkRegex, replaceExitChunk) -- Replace door/exit chunks.
+	str = regexReplace(str, visionChunkRegex, replaceVisionChunk) -- Replace vision limit chunks.
+	entityChunkRegex:gmatch(str, parseEntityChunk) -- Parse what's left: entity chunks.
 
 	return _rooms
 end

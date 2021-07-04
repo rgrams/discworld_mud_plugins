@@ -53,4 +53,7 @@ M[17] = [["An exit north of here, exits north and south of one east, an exit sou
 -- Player named color test.
 M[18] = [["An exit south of here, exits south and north of one east, a tall skipper, \u001b[4zMXP<WhiteMXP>PtHemNetjer pteh Pterrible\u001b[3z, an accountant, a scruffy crow and Gnarmine the gnoll are one east, exits north and south of one west, an exit east of two east, \u001b[4zMXP<WhiteMXP>the net dead statue of Ptarptuffe pteh Pterrible\u001b[3z is two east, the limit of your vision is two east from here, exits north and south of two west and the limit of your vision is two west from here.\n"]]
 
+-- Just a bunch of consecutive exits.
+M[19] = [["Exits northwest and south of one southwest, an exit northwest of one northeast, exits southwest and northeast of one northwest, exits north and south of one west, exits west, east and southwest of one north, exits south and east of two southwest, exits southeast, south and northeast of one southwest and one west, a stout hoplite is one southwest and one west, the limit of your vision is one southwest and one west from here, an exit east of two northeast, exits east and southwest of one northeast and one north, exits southeast, northeast and south of two west, a giant tortoise and an adorable slave are two west, exits southeast, southwest and east of two north and the limit of your vision is two north from here.\n"]]
+
 return M
