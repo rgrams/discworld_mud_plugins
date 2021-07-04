@@ -12,7 +12,11 @@ Plugins that do things a normal user will care about. (As opposed to "back-end" 
 
 Shows the in-game ASCII map in a persistent miniwindow. You can adjust the font, X/Y spacing, and colors via the right-click menu.
 
-[New Beta!] Can also show indicators for what and how many living things are in rooms on the map. By default it just shows a count of how many things are in each room, but you can set up custom filters and groups to score things differently or to show multiple indicators next to each room.
+It can also show indicators for what and how many living things are in rooms on the map. By default it just shows a count of how many things are in each room, but you can set up custom filters and groups to score things differently or to show multiple indicators next to each room.
+
+![screenshot of ASCII map plugin window](https://raw.githubusercontent.com/rgrams/discworld_mud_plugins/master/ASCII-map-screenshot.png)
+
+If you mouse-over a room it will show a tooltip listing the things in that room.
 
 You can use the alias or trigger: "`asciimap <enable/disable> <groupName>`" to enable or disable groups on the fly. You can specify any number of group names separated by spaces:
 > Example: `asciimap enable letters tasty avoid`
