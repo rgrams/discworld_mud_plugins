@@ -45,40 +45,40 @@ local chunkRegex = rex.new(CHUNK, CASE_INSENSITIVE)
 local playerColorRegex = rex.new([[\\u001b\[4zMXP<(?:C )?(#[0-9a-f]{6}|[A-Z]\w+)MXP>]])
 
 local function regexReplace(str, regex, matchFn)
-   local overloadLimit = 1000
-   local startI = 1
-   local lastCharI = #str
-   local iter = 0
-   repeat
-      iter = iter + 1
-      if iter >= overloadLimit then  print("regexReplace - HIT OVERLOAD LIMIT")  break  end
-      local startCharI, endCharI, captures = regex:match(str, startI)
-      if startCharI then
-         local fullMatch = str:sub(startCharI, endCharI)
-         local repl = matchFn(fullMatch, captures)
-         if repl then
-            local pre = str:sub(1, startCharI - 1)
-            local post = str:sub(endCharI + 1, -1)
-            str = pre .. repl .. post
-            endCharI = startCharI + #repl
-            lastCharI = #str
-         end
-      end
-      startI = (endCharI or lastCharI)
-   until startI >= lastCharI
-   return str
+	local overloadLimit = 1000
+	local startI = 1
+	local lastCharI = #str
+	local iter = 0
+	repeat
+		iter = iter + 1
+		if iter >= overloadLimit then  print("regexReplace - HIT OVERLOAD LIMIT")  break  end
+		local startCharI, endCharI, captures = regex:match(str, startI)
+		if startCharI then
+			local fullMatch = str:sub(startCharI, endCharI)
+			local repl = matchFn(fullMatch, captures)
+			if repl then
+				local pre = str:sub(1, startCharI - 1)
+				local post = str:sub(endCharI + 1, -1)
+				str = pre .. repl .. post
+				endCharI = startCharI + #repl
+				lastCharI = #str
+			end
+		end
+		startI = (endCharI or lastCharI)
+	until startI >= lastCharI
+	return str
 end
 
 local function dirStrToVec(dir)
-   if dir == "n" then  return 0, 1
-   elseif dir == "s" then  return 0, -1
-   elseif dir == "e" then  return 1, 0
-   elseif dir == "w" then  return -1, 0
-   elseif dir == "ne" then  return 1, 1
-   elseif dir == "nw" then  return -1, 1
-   elseif dir == "se" then  return 1, -1
-   elseif dir == "sw" then  return -1, -1
-   end
+	if dir == "n" then  return 0, 1
+	elseif dir == "s" then  return 0, -1
+	elseif dir == "e" then  return 1, 0
+	elseif dir == "w" then  return -1, 0
+	elseif dir == "ne" then  return 1, 1
+	elseif dir == "nw" then  return -1, 1
+	elseif dir == "se" then  return 1, -1
+	elseif dir == "sw" then  return -1, -1
+	end
 end
 
 -- Replacer for MXP hex colors before player names.
@@ -99,22 +99,22 @@ end
 
 -- Replace words with abbreviations, inside < >.
 local function moveReplacer(match, captures)
-   local num = numStrToNum[captures[1]] or 1
-   local dir = longDirToShort[captures[2]]
-   if dir == "here" then
-      num, dir = 0, "n"
-   end
-   return "<"..num.." "..dir..">"
+	local num = numStrToNum[captures[1]] or 1
+	local dir = longDirToShort[captures[2]]
+	if dir == "here" then
+		num, dir = 0, "n"
+	end
+	return "<"..num.." "..dir..">"
 end
 
 -- Replace
 local function moveSequenceReplacer(match, captures)
-   local list, moveAnd, last = captures[1], captures[2], captures[3]
-   list = list or ""
-   moveAnd = moveAnd and moveAnd:gsub(" and", ",") or ""
-   local all = list..moveAnd..last
-   all = all:gsub("[<>]", "")
-   return "<"..all..">"
+	local list, moveAnd, last = captures[1], captures[2], captures[3]
+	list = list or ""
+	moveAnd = moveAnd and moveAnd:gsub(" and", ",") or ""
+	local all = list..moveAnd..last
+	all = all:gsub("[<>]", "")
+	return "<"..all..">"
 end
 
 -- Temporary variables so regex match functions can be static.
@@ -124,59 +124,59 @@ local _moves
 local _dx, _dy
 
 local function sumMove(match, captures) -- Full match is the abbreviation: "1 nw", etc.
-   local dist, dir = tonumber(captures[1]), captures[2]
-   local dx, dy = dirStrToVec(dir)
-   _dx, _dy = _dx + dx*dist, _dy + dy*dist
-   table.insert(_moves, match)
+	local dist, dir = tonumber(captures[1]), captures[2]
+	local dx, dy = dirStrToVec(dir)
+	_dx, _dy = _dx + dx*dist, _dy + dy*dist
+	table.insert(_moves, match)
 end
 
 local function getMoveSequenceFromString(moveSeqStr)
-   _dx, _dy = 0, 0
-   _moves = {}
-   splitMoveSeqRegex:gmatch(moveSeqStr, sumMove)
-   return _moves, _dx, _dy
+	_dx, _dy = 0, 0
+	_moves = {}
+	splitMoveSeqRegex:gmatch(moveSeqStr, sumMove)
+	return _moves, _dx, _dy
 end
 
 local function addEntities(match, captures)
-   if captures[1] then  captures[1] = string.lower(captures[1])  end
-   local num = numStrToNum[captures[1]]
-   if type(num) ~= "number" then
-      print("WARNING: MDT-Parser.addEntities - Number capture seems to have failed. Invalid number: '"..tostring(num).."' for match: '"..match.."'")
-      num = 1
-   end
-   local entStr = captures[2]
-   if num > 1 then  entStr = num .. " " .. entStr  end
-   _entities = _entities or {}
-   table.insert(_entities, entStr)
+	if captures[1] then  captures[1] = string.lower(captures[1])  end
+	local num = numStrToNum[captures[1]]
+	if type(num) ~= "number" then
+		print("WARNING: MDT-Parser.addEntities - Number capture seems to have failed. Invalid number: '"..tostring(num).."' for match: '"..match.."'")
+		num = 1
+	end
+	local entStr = captures[2]
+	if num > 1 then  entStr = num .. " " .. entStr  end
+	_entities = _entities or {}
+	table.insert(_entities, entStr)
 end
 
 local entityRegex = rex.new("(?:a |an |)"..THING_COUNT.."?(.+?)(?:, |$)", CASE_INSENSITIVE)
 
 local function parseChunk(chunk, captures)
-   local chunkType = (captures[EXIT] or captures[VISION] or "thing")
-   if captures[EXIT] then  chunkType = chunkType:lower()  end -- "Exit"/"Door", etc. can be the first word in the whole packet.
+	local chunkType = (captures[EXIT] or captures[VISION] or "thing")
+	if captures[EXIT] then  chunkType = chunkType:lower()  end -- "Exit"/"Door", etc. can be the first word in the whole packet.
 
-   -- chunkType can be: "exit", "door", "vision", or "thing".
-   if chunkType == "thing" then
-      local thingStr = captures[THING]
-      local posStr = captures[THING_POS]
+	-- chunkType can be: "exit", "door", "vision", or "thing".
+	if chunkType == "thing" then
+		local thingStr = captures[THING]
+		local posStr = captures[THING_POS]
 
-      getMoveSequenceFromString(posStr)
+		getMoveSequenceFromString(posStr)
 
-      thingStr = thingStr:gsub(" and ", ", ")
-      _entities = nil -- Clear data from last use.
-      entityRegex:gmatch(thingStr, addEntities)
+		thingStr = thingStr:gsub(" and ", ", ")
+		_entities = nil -- Clear data from last use.
+		entityRegex:gmatch(thingStr, addEntities)
 
-      if _debugLevel then
-         local str = string.format("%s:  %s", table.concat(_moves, ", "), table.concat(_entities, ", "))
-         print(str)
-      end
+		if _debugLevel then
+			local str = string.format("%s:  %s", table.concat(_moves, ", "), table.concat(_entities, ", "))
+			print(str)
+		end
 
-      if _entities and #_entities > 0 then
-         local roomData = { entities = _entities, moves = _moves, dx = _dx, dy = _dy }
-         table.insert(_rooms, roomData)
-      end
-   end
+		if _entities and #_entities > 0 then
+			local roomData = { entities = _entities, moves = _moves, dx = _dx, dy = _dy }
+			table.insert(_rooms, roomData)
+		end
+	end
 end
 
 local isValidColorOption = { strip = false, ansi = true, unmodified = true }
@@ -188,9 +188,9 @@ local function parse(str, debugLevel, playerPrefix, colorOption)
 	colorOption = isValidColorOption[colorOption] and colorOption or nil
 	_colorOption = colorOption
 
-   str = str:gsub(prefix, "")
-   str = str:gsub(suffix, "")
-   str = str:gsub('"', "")
+	str = str:gsub(prefix, "")
+	str = str:gsub(suffix, "")
+	str = str:gsub('"', "")
 
 	if not playerPrefix and not colorOption then -- Default: just strip out player colors.
 		str = str:gsub("\\u001b%[%dz", "") -- NOTE: \u001b == Unicode Escape Sequence.
@@ -206,23 +206,23 @@ local function parse(str, debugLevel, playerPrefix, colorOption)
 		end
 	end
 
-   for i,v in ipairs(customReplacers) do
-      str = str:gsub(v[1], v[2])
-   end
+	for i,v in ipairs(customReplacers) do
+		str = str:gsub(v[1], v[2])
+	end
 
-   if _debugLevel and _debugLevel >= 2 then  AnsiNote(str)  end
+	if _debugLevel and _debugLevel >= 2 then  AnsiNote(str)  end
 
-   _rooms = {} -- List of room entries: { entities, moves, dx, dy }
-   -- (Store at higher scope so parseChunk() can access it.)
+	_rooms = {} -- List of room entries: { entities, moves, dx, dy }
+	-- (Store at higher scope so parseChunk() can access it.)
 
-   -- First replace directional stuff with sequences that are easy to deal with.
-   str = regexReplace(str, moveRegex, moveReplacer) -- "two northwest" --> "<2 nw>"
-   str = regexReplace(str, moveSequenceRegex, moveSequenceReplacer)
-   if _debugLevel == 3 then  print(str)  end
-   -- Now we can detect the different chunks very specifically without extra junk in the way.
-   chunkRegex:gmatch(str, parseChunk)
+	-- First replace directional stuff with sequences that are easy to deal with.
+	str = regexReplace(str, moveRegex, moveReplacer) -- "two northwest" --> "<2 nw>"
+	str = regexReplace(str, moveSequenceRegex, moveSequenceReplacer)
+	if _debugLevel == 3 then  print(str)  end
+	-- Now we can detect the different chunks very specifically without extra junk in the way.
+	chunkRegex:gmatch(str, parseChunk)
 
-   return _rooms
+	return _rooms
 end
 
 return parse
