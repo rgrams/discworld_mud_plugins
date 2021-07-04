@@ -183,6 +183,7 @@ local isValidColorOption = { strip = false, ansi = true, unmodified = true }
 
 local function parse(str, debugLevel, playerPrefix, colorOption)
 	_debugLevel = debugLevel -- any-truthy-value --> print each room, 2 --> print whole text and each room.
+	if playerPrefix == "" then  playerPrefix = nil  end
 	_playerPrefix = playerPrefix
 	colorOption = isValidColorOption[colorOption] and colorOption or nil
 	_colorOption = colorOption
