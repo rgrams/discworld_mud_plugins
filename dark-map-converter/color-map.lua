@@ -42,6 +42,8 @@ local map = {
 	{ 0.48, 0.48, 0.74, 0.54, 0.54, 0.28 },
 	{ 0.00, 0.17, 0.91, 0.25, 0.21, 0.00 },
 	{ 0.48, 0.29, 0.00, 0.25, 0.45, 0.82 }, -- am_docks water
+	{ 0.26, 0.26, 0.26, 0.58, 0.58, 0.58 }, -- am_temples guild rooms (slight variation)
+	{ 0.48, 0.48, 0.00, 0.37, 0.37, 0.85 }, -- am_smallgods southern stairs/shop.
 }
 
 return map
