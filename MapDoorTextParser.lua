@@ -29,7 +29,7 @@ local playerColorRegex = rex.new([[\\u001b\[4zMXP<(?:C )?(#[0-9a-f]{6}|[A-Z]\w+)
 
 local THING_COUNT = "(?:(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen) )"
 local MOVE_COUNT = "(one|two|three|four|five|six|seven)"
-local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west|here)"
+local DIRECTION = "(northeast|northwest|southeast|southwest|north|south|east|west|here)\\b"
 local moveRegex = rex.new("(?:"..MOVE_COUNT.." )?"..DIRECTION, CASE_INSENSITIVE) -- Match a space ONLY if there's a number, but don't capture it.
 
 local numStrToNum = { [false] = 1, one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }

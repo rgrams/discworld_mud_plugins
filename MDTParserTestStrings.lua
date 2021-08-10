@@ -56,4 +56,6 @@ M[18] = [["An exit south of here, exits south and north of one east, a tall skip
 -- Just a bunch of consecutive exits.
 M[19] = [["Exits northwest and south of one southwest, an exit northwest of one northeast, exits southwest and northeast of one northwest, exits north and south of one west, exits west, east and southwest of one north, exits south and east of two southwest, exits southeast, south and northeast of one southwest and one west, a stout hoplite is one southwest and one west, the limit of your vision is one southwest and one west from here, an exit east of two northeast, exits east and southwest of one northeast and one north, exits southeast, northeast and south of two west, a giant tortoise and an adorable slave are two west, exits southeast, southwest and east of two north and the limit of your vision is two north from here.\n"]]
 
+M[20] = [["A door west of here, exits east and west of one south, a door west of two south, \u001b[4zMXP<C #af00d7MXP>Westley\u001b[3z and \u001b[4zMXP<C #af00d7MXP>Eli\u001b[3z are two south and the limit of your vision is two south from here.\n"]]
+
 return M
