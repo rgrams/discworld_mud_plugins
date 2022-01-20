@@ -4,9 +4,35 @@ local ansi = require "ansi"
 local paletteGenerator = require "palette-generator"
 local invertShader = love.graphics.newShader("invert-shader.glsl")
 
+local function splitFilePath(path)
+	return string.match(path, "(.*)[\\/]([^\\/%.]+)%.?(.*)$") -- returns folder, filename, extension
+end
+
+local function getImageFromAbsolutePath(path)
+	local file, error = io.open(path, "rb")
+	if error then
+		print("Error opening file from absolute path:\n   "..tostring(error))
+		return
+	end
+	local folder, name, extension = splitFilePath(path)
+	local filename = name .. "." .. extension
+	local fileData, error = love.filesystem.newFileData(file:read("*a"), filename)
+	file:close()
+	if not error then
+		local isSuccess, result = pcall(love.graphics.newImage, fileData)
+		if not isSuccess then
+			print("Error decoding image from file:\n   "..result)
+		else
+			return result
+		end
+	else
+		print("Error reading file:\n   "..error)
+	end
+end
+
 local function openFile(localFilepath, forWrite)
 	local dir = love.filesystem.getWorkingDirectory()
-	local file, err = io.open(dir .. "/"..localFilepath, forWrite and "w" or "r")
+	local file, err = io.open(dir .. "/" .. localFilepath, forWrite and "w" or "r")
 	if not file then
 		print(err)
 		return
@@ -67,13 +93,26 @@ local function getFilePath(folder, filename)
 	end
 end
 
-local function convertImage(filename, inputFolder, outputFolder)
+local function convertImage(filename, inputFolder, outputFolder, isAbsolutePath)
 	local inputPath = getFilePath(inputFolder, filename)
 	local outputPath = getFilePath(outputFolder, filename)
 
-	local image = love.graphics.newImage(inputPath)
+	local image
+
+	if isAbsolutePath then
+		image = getImageFromAbsolutePath(inputPath)
+		if not image then  return  end
+	else
+		local isSuccess, result = pcall(love.graphics.newImage, inputPath)
+		if not isSuccess then
+			print("Error loading image for conversion from relative path, '"..tostring(inputPath).."':\n   "..tostring(result))
+			return
+		end
+		image = result
+	end
+
 	local iw, ih = image:getDimensions()
-	print("Converting image: ", inputPath, iw, ih, outputPath)
+	print("Converting image:   "..filename.." ("..iw.." x "..ih..")\n   FROM: "..inputPath.."\n   TO: "..outputPath)
 	local canvas = makeCanvas(iw, ih)
 	drawImageToCanvas(image, canvas, invertShader)
 
@@ -105,21 +144,28 @@ local function getPaletteConversion(filename, masterFolder, pupilFolder)
 	paletteGenerator.printPalette()
 end
 
-local inputFileNames = require "map-filenames-list"
-
 function love.load(arg)
-	local t = love.timer.getTime()
-
+	-- print("Dark Map Converter - working directory: "..love.filesystem.getWorkingDirectory())
 	love.graphics.setDefaultFilter("nearest", "nearest")
-	for i,filename in ipairs(inputFileNames) do
-		-- convertImage(filename, "backup_maps", "output")
+end
+
+local DEFAULT_OUTPUT_FOLDER = "output"
+local MOUNT_FOLDER = "droppedFolder"
+
+function love.filedropped(file)
+	local path = file:getFilename()
+	print("File dropped: "..path)
+	local folder, filename, extension = splitFilePath(path)
+	convertImage(filename.."."..extension, folder, DEFAULT_OUTPUT_FOLDER, true)
+end
+
+function love.directorydropped(path)
+	print("Directory dropped: "..path)
+	love.filesystem.mount(path, MOUNT_FOLDER)
+	for i,filename in ipairs(love.filesystem.getDirectoryItems(MOUNT_FOLDER)) do
+		convertImage(filename, MOUNT_FOLDER, DEFAULT_OUTPUT_FOLDER)
 	end
-	-- getPaletteConversion("am_docks.png", "", "output")
-
-	-- convertImage("am.png", ".", "output")
-
-	t = love.timer.getTime() - t
-	print("ELAPSED TIME: "..t.." seconds")
+	love.filesystem.unmount(path)
 end
 
 local drawX, drawY = 0, 0
