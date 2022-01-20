@@ -4,6 +4,10 @@ local ansi = require "ansi"
 local paletteGenerator = require "palette-generator"
 local invertShader = love.graphics.newShader("invert-shader.glsl")
 
+local function makeLocalFolder(folder)
+	os.execute("mkdir "..folder)
+end
+
 local function splitFilePath(path)
 	return string.match(path, "(.*)[\\/]([^\\/%.]+)%.?(.*)$") -- returns folder, filename, extension
 end
@@ -32,7 +36,7 @@ end
 
 local function openFile(localFilepath, forWrite)
 	local dir = love.filesystem.getWorkingDirectory()
-	local file, err = io.open(dir .. "/" .. localFilepath, forWrite and "w" or "r")
+	local file, err = io.open(dir .. "/" .. localFilepath, forWrite and "wb" or "r") -- Need 'b'---binary mode for windows.
 	if not file then
 		print(err)
 		return
@@ -146,7 +150,7 @@ local function getPaletteConversion(filename, masterFolder, pupilFolder)
 end
 
 function love.load(arg)
-	-- print("Dark Map Converter - working directory: "..love.filesystem.getWorkingDirectory())
+	print("Dark Map Converter - working directory: "..love.filesystem.getWorkingDirectory())
 	love.graphics.setDefaultFilter("nearest", "nearest")
 end
 
@@ -157,12 +161,14 @@ function love.filedropped(file)
 	local path = file:getFilename()
 	print("File dropped: "..path)
 	local folder, filename, extension = splitFilePath(path)
+	makeLocalFolder(DEFAULT_OUTPUT_FOLDER)
 	convertImage(filename.."."..extension, folder, DEFAULT_OUTPUT_FOLDER, true)
 end
 
 function love.directorydropped(path)
 	print("Directory dropped: "..path)
 	love.filesystem.mount(path, MOUNT_FOLDER)
+	makeLocalFolder(DEFAULT_OUTPUT_FOLDER)
 	for i,filename in ipairs(love.filesystem.getDirectoryItems(MOUNT_FOLDER)) do
 		convertImage(filename, MOUNT_FOLDER, DEFAULT_OUTPUT_FOLDER)
 	end
