@@ -112,7 +112,8 @@ local function convertImage(filename, inputFolder, outputFolder, isAbsolutePath)
 	end
 
 	local iw, ih = image:getDimensions()
-	print("Converting image:   "..filename.." ("..iw.." x "..ih..")\n   FROM: "..inputPath.."\n   TO: "..outputPath)
+	local pixelFormat = image:getFormat()
+	print("Converting image:   "..filename.." ("..iw.." x "..ih..") ("..pixelFormat..")\n   FROM: "..inputPath.."\n   TO:   "..outputPath)
 	local canvas = makeCanvas(iw, ih)
 	drawImageToCanvas(image, canvas, invertShader)
 
