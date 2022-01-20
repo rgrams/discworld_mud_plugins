@@ -1,0 +1,30 @@
+name = "Dark Map Converter 1.0"
+default_targets = ["win32", "appimage"]
+build_directory = ".build"
+
+love_files = [
+	"+./*",        # Include all files.
+	"-*/.*",       # Exclude all files & folders anywhere starting with '.'
+]
+
+love_version = "11.3"
+
+[win32]
+# This points to a directory containing an unpacked löve zip, just like official
+# ones distributed on the löve website (containing an .exe, a bunch of .dlls).
+love_binaries = "/home/ross/_/My-game-stuff/love2d-binaries/love-11.3-win32"
+
+[win64]
+love_binaries = "/home/ross/_/My-game-stuff/love2d-binaries/love-11.3-win64"
+
+[linux]
+# These values are included in the .desktop file
+[linux.desktop_file_metadata]
+# Comment=""
+
+[appimage]
+# https://github.com/pfirsich/love-appimages
+source_appimage = "/home/ross/_/My-game-stuff/love2d-binaries/love-11.3-x86_64.AppImage"
+
+[macos]
+love_binaries = "/home/ross/_/My-game-stuff/love2d-binaries/mac"
