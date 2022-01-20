@@ -178,7 +178,15 @@ end
 local drawX, drawY = 0, 0
 
 function love.draw()
-	if myImg then  love.graphics.draw(myImg, drawX, drawY)  end
+	if myImg then
+		love.graphics.draw(myImg, drawX, drawY)
+	else
+		local fnt = love.graphics.getFont()
+		local str = "Drag-and-drop map images or folders onto this window to convert."
+		local textW = fnt:getWidth(str)
+		local w, h = love.graphics.getDimensions()
+		love.graphics.print(str, w/2 - textW/2, h/2-8)
+	end
 end
 
 local isPanning = false
