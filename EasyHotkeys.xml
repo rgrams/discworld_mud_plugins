@@ -117,6 +117,7 @@ local hotkeys = {
 	-- [1] = {"Ctrl+M", "minimap ", 1},
 }
 local groupedHotkeys = {}
+local disabledGroups = {}
 
 local txtCol = "white"
 local bgCols = { "#303030", "#702020", "" }
@@ -284,7 +285,7 @@ function hotkeyShowHotkeyList(name, line, wildcards)
 	end
 	for name,group in pairs(groupedHotkeys) do
 		Tell("  ")
-		debugNote("Group '"..name.."':")
+		debugNote("Group '"..name.."':"..(disabledGroups[name] and " (disabled)" or ""))
 		for i,v in ipairs(group) do
 			haveAHotkey = true
 			printHotkey(v, 2)
@@ -310,6 +311,7 @@ function enableGroup(name, line, wildcards)
 		return
 	end
 	local group = groupedHotkeys[groupName]
+	disabledGroups[groupName] = nil
 	for i,hotkey in ipairs(group) do
 		enableHotkey(hotkey)
 	end
@@ -323,32 +325,40 @@ function disableGroup(name, line, wildcards)
 		return
 	end
 	local group = groupedHotkeys[groupName]
+	disabledGroups[groupName] = true
 	for i,hotkey in ipairs(group) do
 		disableHotkey(hotkey)
 	end
 	debugNote("Hotkey Group '"..groupName.."' disabled.")
 end
 
+local function initList(input, list, isEnabled)
+	for i,hotkey in ipairs(input) do
+		list[i] = hotkey
+		if isEnabled then  enableHotkey(hotkey)  end
+	end
+end
+
 local function init()
 	debugNote('Hotkey plugin enabled: type "hotkey help" for help.')
+	local disabledGroupsStr = GetVariable("disabledGroups")
+	if disabledGroupsStr then
+		disabledGroups = json.decode(disabledGroupsStr)
+	end
+
 	local loaded = GetVariable("hotkeys")
 	if loaded then
 		loaded = json.decode(loaded)
-		for i,hotkey in ipairs(loaded) do -- Only keep indexed hotkeys.
-			hotkeys[i] = hotkey
-			enableHotkey(hotkey)
-		end
+		initList(loaded, hotkeys, true)
 	end
+
 	local groupsStr = GetVariable("groupedHotkeys")
 	if groupsStr then
-		groups = json.decode(groupsStr)
-		for name,group in pairs(groups) do
-			ensureGroupExists(name)
-			local list = groupedHotkeys[name]
-			for i,hotkey in ipairs(group) do
-				list[i] = hotkey
-				enableHotkey(hotkey)
-			end
+		loadedGroups = json.decode(groupsStr)
+		for groupName,loadedGroup in pairs(loadedGroups) do
+			ensureGroupExists(groupName)
+			local list = groupedHotkeys[groupName]
+			initList(loadedGroup, list, not disabledGroups[groupName])
 		end
 	end
 end
@@ -369,6 +379,9 @@ function OnPluginSaveState()
 	SetVariable("hotkeys", listStr)
 	local groupsStr = json.encode(groupedHotkeys)
 	SetVariable("groupedHotkeys", groupsStr)
+	-- NOTE: Can't save enabled state as a key inside the group because that makes
+	--       JSON treat it all like a dictionary with string keys and break everything.
+	SetVariable("disabledGroups", json.encode(disabledGroups))
 end
 
 function OnPluginInstall()  init()  end
