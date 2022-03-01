@@ -50,7 +50,42 @@
 		regexp="y"
 		sequence="100"
 	></alias>
+	<alias
+		script="enableGroup"
+		match='^hotkey enable (.+)$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
+	<alias
+		script="disableGroup"
+		match='^hotkey disable (.+)$'
+		enabled="y"
+		regexp="y"
+		sequence="100"
+	></alias>
 </aliases>
+
+<triggers>
+	<trigger
+		enabled="y"
+		ignore_case="y"
+		keep_evaluating="y"
+		match="^hotkey enable (.+)$"
+		regexp="y"
+		script="enableGroup"
+		sequence="100"
+	></trigger>
+	<trigger
+		enabled="y"
+		ignore_case="y"
+		keep_evaluating="y"
+		match="^hotkey disable (.+)$"
+		regexp="y"
+		script="disableGroup"
+		sequence="100"
+	></trigger>
+</triggers>
 
 <script>
 	<![CDATA[
@@ -259,14 +294,49 @@ function hotkeyShowHotkeyList(name, line, wildcards)
 	Note("")
 end
 
+local function enableHotkey(data)
+	AcceleratorTo(unpack(data))
+end
+
+local function disableHotkey(data)
+	local combo = data[1]
+	AcceleratorTo(combo, "", 0)
+end
+
+function enableGroup(name, line, wildcards)
+	local groupName = wildcards[1]
+	if not groupedHotkeys[groupName] then
+		debugNote("Enable Hotkey Group Failed. Hotkey group '"..groupName.."' does not exist.", 2)
+		return
+	end
+	local group = groupedHotkeys[groupName]
+	for i,hotkey in ipairs(group) do
+		enableHotkey(hotkey)
+	end
+	debugNote("Hotkey Group '"..groupName.."' enabled.")
+end
+
+function disableGroup(name, line, wildcards)
+	local groupName = wildcards[1]
+	if not groupedHotkeys[groupName] then
+		debugNote("Enable Hotkey Group Failed. Hotkey group '"..groupName.."' does not exist.", 2)
+		return
+	end
+	local group = groupedHotkeys[groupName]
+	for i,hotkey in ipairs(group) do
+		disableHotkey(hotkey)
+	end
+	debugNote("Hotkey Group '"..groupName.."' disabled.")
+end
+
 local function init()
 	debugNote('Hotkey plugin enabled: type "hotkey help" for help.')
 	local loaded = GetVariable("hotkeys")
 	if loaded then
 		loaded = json.decode(loaded)
-		for i,v in ipairs(loaded) do -- Only keep indexed hotkeys.
-			hotkeys[i] = v
-			AcceleratorTo(v[1], v[2], v[3])
+		for i,hotkey in ipairs(loaded) do -- Only keep indexed hotkeys.
+			hotkeys[i] = hotkey
+			enableHotkey(hotkey)
 		end
 	end
 	local groupsStr = GetVariable("groupedHotkeys")
@@ -275,21 +345,21 @@ local function init()
 		for name,group in pairs(groups) do
 			ensureGroupExists(name)
 			local list = groupedHotkeys[name]
-			for i,v in ipairs(group) do
-				list[i] = v
-				AcceleratorTo(v[1], v[2], v[3])
+			for i,hotkey in ipairs(group) do
+				list[i] = hotkey
+				enableHotkey(hotkey)
 			end
 		end
 	end
 end
 
 local function final()
-	for i,v in ipairs(hotkeys) do
-		AcceleratorTo(v[1], "", 0) -- Reset hotkey.
+	for i,hotkey in ipairs(hotkeys) do
+		disableHotkey(hotkey)
 	end
 	for name,group in pairs(groupedHotkeys) do
-		for i,v in ipairs(group) do
-			AcceleratorTo(v[1], "", 0) -- Reset hotkey.
+		for i,hotkey in ipairs(group) do
+			disableHotkey(hotkey)
 		end
 	end
 end
