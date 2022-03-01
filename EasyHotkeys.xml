@@ -17,14 +17,14 @@
 <aliases>
 	<alias
 		script="addHotkey"
-		match='^add hotkey (.+?) \"(.+)\" (\d+)$'
+		match='^add hotkey (.+?) \"(.+)\" (\d+)(?: (.+))?$'
 		enabled="y"
 		regexp="y"
 		sequence="100"
 	></alias>
 	<alias
 		script="removeHotkey"
-		match='^remove hotkey (.+?)$'
+		match='^remove hotkey (.+?)(?: (.+))?$'
 		enabled="y"
 		regexp="y"
 		sequence="100"
@@ -81,12 +81,18 @@ require "json"
 local hotkeys = {
 	-- [1] = {"Ctrl+M", "minimap ", 1},
 }
+local groupedHotkeys = {}
 
 local txtCol = "white"
 local bgCols = { "#303030", "#702020", "" }
 
-local function hotkeyExists(keyCombo)
-	for i,v in ipairs(hotkeys) do
+local function debugNote(msg, bgColorCode)
+	bgColorCode = bgColorCode or 1
+	ColourNote(txtCol, bgCols[bgColorCode], msg)
+end
+
+local function hotkeyExists(keyCombo, list)
+	for i,v in ipairs(list) do
 		if v[1] == keyCombo then
 			return i
 		end
@@ -94,51 +100,85 @@ local function hotkeyExists(keyCombo)
 	return false
 end
 
-local function debugNote(msg, bgColorCode)
-	bgColorCode = bgColorCode or 1
-	ColourNote(txtCol, bgCols[bgColorCode], msg)
+local function groupExists(groupName)
+	return groupedHotkeys[groupName]
+end
+
+local function ensureGroupExists(groupName)
+	if groupExists(groupName) then
+		return
+	else
+		Tell("   ")
+		debugNote("Adding new group: '"..groupName.."'.")
+		groupedHotkeys[groupName] = {}
+	end
 end
 
 function addHotkey(name, line, wildcards)
 	local keyCombo = wildcards[1]
 	local content = wildcards[2]
 	local sendTo = tonumber(wildcards[3])
+	local groupName = wildcards[4]
+	if groupName == "" then  groupName = nil  end
+	if groupName then  ensureGroupExists(groupName)  end
+
+	-- Validate sendTo code.
 	if sendTo < 0 or sendTo > 14 then
 		debugNote(
 			"Add Hotkey Failed: Invalid 'sendTo' number: " .. wildcards[3], 2
 		)
 		return
 	end
-	debugNote(
-		"Adding Hotkey: " .. keyCombo .. ' - "' .. content ..
-		'", sendTo: ' .. wildcards[3] .. " (" .. SENDTO[sendTo][1] .. ")"
-	)
-	local existingIndex = hotkeyExists(keyCombo)
+
+	-- Print response text.
+	local msg =	"Adding Hotkey: " .. keyCombo .. ' - "' .. content ..
+		         '", sendTo: ' .. wildcards[3] .. " (" .. SENDTO[sendTo][1] .. ")"
+	if groupName then  msg = msg .. ", to group: '"..groupName.."'"  end
+	debugNote(msg)
+
+	-- Add hotkey data to list.
+	local list = groupName and groupedHotkeys[groupName] or hotkeys
+
+	local existingIndex = hotkeyExists(keyCombo, list)
 	if existingIndex then
-		local old = hotkeys[existingIndex]
+		local old = list[existingIndex]
 		Tell("   ")
 		debugNote(
 			"Replaces old binding for: "  .. keyCombo .. ' - "' .. old[2] ..
 			'", sendTo: ' .. old[3] .. " (" .. SENDTO[old[3]][1] .. ")",
 			2
 		)
-		hotkeys[existingIndex][2] = content
-		hotkeys[existingIndex][3] = sendTo
+		list[existingIndex][2] = content
+		list[existingIndex][3] = sendTo
 	else
-		table.insert(hotkeys, {keyCombo, content, sendTo})
+		table.insert(list, {keyCombo, content, sendTo})
 	end
 	AcceleratorTo(keyCombo, content, sendTo)
 end
 
 function removeHotkey(name, line, wildcards)
 	local keyCombo = wildcards[1]
-	local index = hotkeyExists(keyCombo)
+	local groupName = wildcards[2]
+	if groupName == "" then  groupName = nil  end
+	if groupName and not groupExists(groupName) then
+		debugNote("Remove Hotkey Failed. Hotkey group '"..groupName.."' does not exist.", 2)
+		return
+	end
+
+	local list = groupName and groupedHotkeys[groupName] or hotkeys
+
+	local index = hotkeyExists(keyCombo, list)
 	if index then
-		local hk = hotkeys[index]
-		debugNote("Removing Hotkey: " .. keyCombo .. " - " .. hk[2] ..
-			", sendTo: " .. tostring(hk[3]) .. " (" .. SENDTO[hk[3]][1] .. ")")
+		local hk = list[index]
+		local msg =	"Removing Hotkey: " .. keyCombo .. ' - "' .. hk[2] ..
+			         '", sendTo: ' .. hk[3] .. " (" .. SENDTO[hk[3]][1] .. ")"
+		if groupName then  msg = msg .. ", from group: '"..groupName.."'"  end
+		debugNote(msg)
 		Accelerator(keyCombo, "", 0)
-		table.remove(hotkeys, index)
+		table.remove(list, index)
+		if groupName and #list == 0 then
+			groupedHotkeys[groupName] = nil -- Remove empty groups.
+		end
 	else
 		debugNote("Remove Hotkey Failed. Couldn't find binding for: " ..
 			keyCombo .. ". ", 2 )
@@ -190,6 +230,14 @@ function hotkeySendtoList(name, line, wildcards)
 	Note("")
 end
 
+local function printHotkey(hotkey, indentLevel)
+	indentLevel = indentLevel or 1
+	Tell(("   "):rep(indentLevel))
+	local combo, content, sendTo = unpack(hotkey)
+	local str = "[%s] - \"%s\", sendTo: %d (%s)"
+	debugNote(str:format(combo, content, sendTo, SENDTO[sendTo][1]))
+end
+
 function hotkeyShowHotkeyList(name, line, wildcards)
 	Note("")
 	debugNote("---      Current Hotkeys:      ---")
@@ -197,11 +245,15 @@ function hotkeyShowHotkeyList(name, line, wildcards)
 	local haveAHotkey = false
 	for i,v in ipairs(hotkeys) do
 		haveAHotkey = true
-		Tell("   ")
-		debugNote(
-			"[" .. v[1] .. '] - "' .. v[2] ..
-			'", sendTo: ' .. v[3] .. " (" .. SENDTO[v[3]][1] .. ")"
-		)
+		printHotkey(v)
+	end
+	for name,group in pairs(groupedHotkeys) do
+		Tell("  ")
+		debugNote("Group '"..name.."':")
+		for i,v in ipairs(group) do
+			haveAHotkey = true
+			printHotkey(v, 2)
+		end
 	end
 	if not haveAHotkey then  debugNote("    -- you don't have any --", 3)  end
 	Note("")
@@ -217,17 +269,36 @@ local function init()
 			AcceleratorTo(v[1], v[2], v[3])
 		end
 	end
+	local groupsStr = GetVariable("groupedHotkeys")
+	if groupsStr then
+		groups = json.decode(groupsStr)
+		for name,group in pairs(groups) do
+			ensureGroupExists(name)
+			local list = groupedHotkeys[name]
+			for i,v in ipairs(group) do
+				list[i] = v
+				AcceleratorTo(v[1], v[2], v[3])
+			end
+		end
+	end
 end
 
 local function final()
 	for i,v in ipairs(hotkeys) do
 		AcceleratorTo(v[1], "", 0) -- Reset hotkey.
 	end
+	for name,group in pairs(groupedHotkeys) do
+		for i,v in ipairs(group) do
+			AcceleratorTo(v[1], "", 0) -- Reset hotkey.
+		end
+	end
 end
 
 function OnPluginSaveState()
 	local listStr = json.encode(hotkeys)
 	SetVariable("hotkeys", listStr)
+	local groupsStr = json.encode(groupedHotkeys)
+	SetVariable("groupedHotkeys", groupsStr)
 end
 
 function OnPluginInstall()  init()  end
