@@ -301,13 +301,41 @@ function hotkeyShowHotkeyList(name, line, wildcards)
 	Note("")
 end
 
+local function getLastHotkey(combo)
+	local last
+	for i,hotkey in ipairs(hotkeys) do
+		if hotkey[1] == combo then
+			last = hotkey
+		end
+	end
+	for groupName,group in pairs(groupedHotkeys) do
+		if not disabledGroups[groupName] then
+			for i,hotkey in ipairs(group) do
+				if hotkey[1] == combo then
+					last = hotkey
+				end
+			end
+		end
+	end
+	return last
+end
+
 local function enableHotkey(data)
 	AcceleratorTo(unpack(data))
 end
 
-local function disableHotkey(data)
+local function disableHotkey(data, checkForPrevious)
 	local combo = data[1]
-	AcceleratorTo(combo, "", 0)
+	if checkForPrevious then
+		local lastHotkey = getLastHotkey(combo)
+		if lastHotkey then
+			enableHotkey(lastHotkey)
+		else
+			AcceleratorTo(combo, "", 0)
+		end
+	else
+		AcceleratorTo(combo, "", 0)
+	end
 end
 
 function enableGroup(name, line, wildcards)
@@ -333,7 +361,7 @@ function disableGroup(name, line, wildcards)
 	local group = groupedHotkeys[groupName]
 	disabledGroups[groupName] = true
 	for i,hotkey in ipairs(group) do
-		disableHotkey(hotkey)
+		disableHotkey(hotkey, true)
 	end
 	debugNote("Hotkey Group '"..groupName.."' disabled.")
 end
