@@ -2,10 +2,22 @@
 local prefix = 'room.writtenmap "'
 local suffix = '\\n"'
 
-local customReplacers = {
-	{"(%w+) and white", "%1-and-white"},
-	{"(%w+) and yellow", "%1-and-yellow"},
+local mangleUnmangle = {
+	{"(%w+) and white", "%1 andandwhite", " andandwhite", " and white"},
+	{"(%w+) and yellow", "%1 andandyellow", " andandyellow", " and yellow"},
 }
+local function mangle (txt)
+	for i,v in ipairs(mangleUnmangle) do
+		txt = txt:gsub(v[1], v[2])
+	end
+	return txt
+end
+local function unmangle (txt)
+	for i,v in ipairs(mangleUnmangle) do
+		txt = txt:gsub(v[3], v[4])
+	end
+	return txt
+end
 
 -- Up-scoped values for regex replacer and other functions to grab.
 local _debugLevel -- Set for each call to parse().
@@ -161,7 +173,7 @@ local function addEntities(match, captures)
 		print("WARNING: MDT-Parser.addEntities - Number capture seems to have failed. Invalid number: '"..tostring(num).."' for match: '"..match.."'")
 		num = 1
 	end
-	local entStr = captures[2]
+	local entStr = unmangle(captures[2])
 	if num > 1 then  entStr = num .. " " .. entStr  end
 	_entities = _entities or {}
 	table.insert(_entities, entStr)
@@ -216,9 +228,7 @@ local function parse(str, debugLevel, playerPrefix, colorOption)
 		end
 	end
 
-	for i,v in ipairs(customReplacers) do
-		str = str:gsub(v[1], v[2])
-	end
+	str = mangle(str)
 
 	if _debugLevel and _debugLevel >= 2 then  AnsiNote(str)  end
 

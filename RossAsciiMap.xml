@@ -255,8 +255,6 @@ local function setFilter(i, filter)
 
 If there are multiple identical things in the room, their text will start with a number.
 i.e. "2 annoying children".
-Certain colored things with 'and' in their name will become hyphenated.
-i.e. "grey-and-white spaniel"
 Capitalization is preserved, but you can set the regex to be case-insensitive.]]
 	local extras = { box_width = 800, box_height = 250, prompt_height = 100 }
 	local default = filter and filter.pattern
