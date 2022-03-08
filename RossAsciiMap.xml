@@ -222,7 +222,7 @@ end
 
 -- Living Thing Filter Editing:
 --------------------------------------------------
-local curMDTData
+local curMDTData = nil
 local getCountRegex = rex.new("^(\\d+)")
 
 local function setPlayerPrefix()
@@ -712,6 +712,59 @@ end
         *-
 --]]
 
+-- example: regexSplit("a,b, c", ", ?")  =>  {"a", "b", "c"}
+function regexSplit(text, regularExpression)
+	local ret = {}
+	local reg = rex.new(regularExpression)
+	local matchStart, matchEnd = reg:match(text)
+	if matchStart == nil then
+		table.insert(ret, text)
+	else
+		local prevEnd = 0
+		while matchStart ~= nil do
+			table.insert(ret, string.sub(text, prevEnd + 1, matchStart - 1))
+			prevEnd = matchEnd
+			matchStart, matchEnd = reg:match(text, prevEnd + 1)
+		end
+		table.insert(ret, string.sub(text, prevEnd + 1, -1))
+	end
+	return ret
+end
+-- cb is passed the MDTData and should return true if the display should be updated
+function editMDTData(cb)
+	if MDTIndicatorsEnabled and curMDTData ~= nil then
+		local changed = cb(curMDTData)
+		if changed then
+			scoreMDTRooms(curMDTData)
+			makeMDTArraymap(curMDTData)
+			window.draw(winID) -- writtenmap is sent second, so draw here.
+		end
+	end
+end
+local exitToMoves = { northeast = "1 ne", northwest = "1 nw", southeast = "1 se", southwest = "1 sw", north = "1 n", south = "1 s", east = "1 e", west = "1 w" }
+function triggerNPCEntered(name, line, wildcards)
+	local npcsString = wildcards[2]
+	local moves = exitToMoves[wildcards[4]]
+	editMDTData(function (data)
+		local changed = false
+		for roomI,room in ipairs(data) do
+			if room.entities ~= nil then
+				if #room.moves == 1 and room.moves[1] == moves then
+					for npcI,npc in ipairs(regexSplit(npcsString, "(, | and (?!yellow |white ))(an? )?")) do
+						for entityI,entity in ipairs(room.entities) do
+							if entity == npc then
+								table.remove(room.entities, entityI)
+								changed = true
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+		return changed
+	end)
+end
 function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
 		lastMDTPacket = dataStr
@@ -957,5 +1010,17 @@ function OnPluginDisable()  final() end
 
 	]]>
 </script>
-
+<triggers>
+    <trigger
+        name="triggerNPCEntered"
+		script="triggerNPCEntered"
+        enabled="y"
+        ignore_case="n"
+        keep_evaluating="y"
+        match="^(A |An |The )?(.*) (arrives?|enters?|trundles? in|hobbles? in) from the (north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
+        regexp="y"
+        repeat="n"
+        sequence="100"
+    ></trigger>
+</triggers>
 </muclient>
