@@ -741,19 +741,91 @@ function editMDTData(cb)
 		end
 	end
 end
+local numStrToNum = { one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }
+function parseNumNpc (str)
+	local count, name
+	local i = string.find(str, ' ')
+	if i then
+		local firstWord = string.sub(str, 1, i - 1)
+		name = string.sub(str, i + 1)
+		count = numStrToNum[string.lower(firstWord)]
+		if not count then
+			count = tonumber(firstWord)
+			if not count then
+				count = 1
+				name = firstWord .. ' ' .. name
+			end
+		end
+	else
+		count = 1
+		name = str
+	end
+	return count, name
+end
+function formatNumNpc (count, str)
+	if count == 1 then
+		return str
+	else
+		return count .. ' ' .. str
+	end
+end
+local pluralCache = {}
+local singularCache = {}
+function _pluralize (str)
+	if str:match('[sxz]$') or str:match('[cs]h$') then
+		return str .. 'es'
+	elseif str:match('quy$') or str:match('[^aeiou]y$') then
+		return str .. 'ies'
+	else
+		return str .. 's'
+	end
+end
+function pluralize (str)
+	if not pluralCache[str] then
+		local plural = _pluralize(str)
+		pluralCache[str] = plural
+		singularCache[plural] = str
+	end
+	return pluralCache[str]
+end
+-- only called when if there are 3 or more and all but 1 enter at once
+function singularize (str)
+	return singularCache[str] or string.sub(str, 1, -2)
+end
+
 local exitToMoves = { northeast = "1 ne", northwest = "1 nw", southeast = "1 se", southwest = "1 sw", north = "1 n", south = "1 s", east = "1 e", west = "1 w" }
 function triggerNPCEntered(name, line, wildcards)
-	local npcsString = wildcards[2]
+	local allEntering = wildcards[2]
 	local moves = exitToMoves[wildcards[4]]
 	editMDTData(function (data)
 		local changed = false
 		for roomI,room in ipairs(data) do
 			if room.entities ~= nil then
 				if #room.moves == 1 and room.moves[1] == moves then
-					for npcI,npc in ipairs(regexSplit(npcsString, "(, | and (?!yellow |white ))(an? )?")) do
-						for entityI,entity in ipairs(room.entities) do
-							if entity == npc then
-								table.remove(room.entities, entityI)
+					for _, numEntering in ipairs(regexSplit(allEntering, "(, | and (?!yellow |white ))(an? )?")) do
+						local enteringCount, enteringName = parseNumNpc(numEntering)
+						local enteringPlural = enteringCount > 1
+						for distantI, distant in ipairs(room.entities) do
+							local distantCount, distantName = parseNumNpc(distant)
+							local distantPlural = distantCount > 1
+							local maybePluralEnteringName = enteringName
+							if enteringPlural ~= distantPlural then
+								maybePluralEnteringName = pluralize(enteringName)
+							end
+							if maybePluralEnteringName == distantName then
+								local remaining = distantCount - enteringCount
+								if remaining < 1 then
+									table.remove(room.entities, distantI)
+								else
+									if remaining == 1 then
+										if enteringCount == 1 then
+											distantName = enteringName
+										else
+											distantName = singularize(enteringName)
+										end
+									end
+									room.entities[distantI] = formatNumNpc(remaining, distantName)
+								end
 								changed = true
 								break
 							end
