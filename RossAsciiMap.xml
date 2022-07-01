@@ -222,7 +222,7 @@ end
 
 -- Living Thing Filter Editing:
 --------------------------------------------------
-local curMDTData
+local curMDTData = nil
 local getCountRegex = rex.new("^(\\d+)")
 
 local function setPlayerPrefix()
@@ -255,8 +255,6 @@ local function setFilter(i, filter)
 
 If there are multiple identical things in the room, their text will start with a number.
 i.e. "2 annoying children".
-Certain colored things with 'and' in their name will become hyphenated.
-i.e. "grey-and-white spaniel"
 Capitalization is preserved, but you can set the regex to be case-insensitive.]]
 	local extras = { box_width = 800, box_height = 250, prompt_height = 100 }
 	local default = filter and filter.pattern
@@ -714,6 +712,131 @@ end
         *-
 --]]
 
+-- example: regexSplit("a,b, c", ", ?")  =>  {"a", "b", "c"}
+function regexSplit(text, regularExpression)
+	local ret = {}
+	local reg = rex.new(regularExpression)
+	local matchStart, matchEnd = reg:match(text)
+	if matchStart == nil then
+		table.insert(ret, text)
+	else
+		local prevEnd = 0
+		while matchStart ~= nil do
+			table.insert(ret, string.sub(text, prevEnd + 1, matchStart - 1))
+			prevEnd = matchEnd
+			matchStart, matchEnd = reg:match(text, prevEnd + 1)
+		end
+		table.insert(ret, string.sub(text, prevEnd + 1, -1))
+	end
+	return ret
+end
+-- cb is passed the MDTData and should return true if the display should be updated
+function editMDTData(cb)
+	if MDTIndicatorsEnabled and curMDTData ~= nil then
+		local changed = cb(curMDTData)
+		if changed then
+			scoreMDTRooms(curMDTData)
+			makeMDTArraymap(curMDTData)
+			window.draw(winID) -- writtenmap is sent second, so draw here.
+		end
+	end
+end
+local numStrToNum = { one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }
+function parseNumNpc (str)
+	local count, name
+	local i = string.find(str, ' ')
+	if i then
+		local firstWord = string.sub(str, 1, i - 1)
+		name = string.sub(str, i + 1)
+		count = numStrToNum[string.lower(firstWord)]
+		if not count then
+			count = tonumber(firstWord)
+			if not count then
+				count = 1
+				name = firstWord .. ' ' .. name
+			end
+		end
+	else
+		count = 1
+		name = str
+	end
+	return count, name
+end
+function formatNumNpc (count, str)
+	if count == 1 then
+		return str
+	else
+		return count .. ' ' .. str
+	end
+end
+local pluralCache = {}
+local singularCache = {}
+function _pluralize (str)
+	if str:match('[sxz]$') or str:match('[cs]h$') then
+		return str .. 'es'
+	elseif str:match('quy$') or str:match('[^aeiou]y$') then
+		return str .. 'ies'
+	else
+		return str .. 's'
+	end
+end
+function pluralize (str)
+	if not pluralCache[str] then
+		local plural = _pluralize(str)
+		pluralCache[str] = plural
+		singularCache[plural] = str
+	end
+	return pluralCache[str]
+end
+-- only called when if there are 3 or more and all but 1 enter at once
+function singularize (str)
+	return singularCache[str] or string.sub(str, 1, -2)
+end
+
+local exitToMoves = { northeast = "1 ne", northwest = "1 nw", southeast = "1 se", southwest = "1 sw", north = "1 n", south = "1 s", east = "1 e", west = "1 w" }
+function triggerNPCEntered(name, line, wildcards)
+	local allEntering = wildcards[2]
+	local moves = exitToMoves[wildcards[4]]
+	editMDTData(function (data)
+		local changed = false
+		for roomI,room in ipairs(data) do
+			if room.entities ~= nil then
+				if #room.moves == 1 and room.moves[1] == moves then
+					for _, numEntering in ipairs(regexSplit(allEntering, "(, | and (?!yellow |white ))(an? )?")) do
+						local enteringCount, enteringName = parseNumNpc(numEntering)
+						local enteringPlural = enteringCount > 1
+						for distantI, distant in ipairs(room.entities) do
+							local distantCount, distantName = parseNumNpc(distant)
+							local distantPlural = distantCount > 1
+							local maybePluralEnteringName = enteringName
+							if enteringPlural ~= distantPlural then
+								maybePluralEnteringName = pluralize(enteringName)
+							end
+							if maybePluralEnteringName == distantName then
+								local remaining = distantCount - enteringCount
+								if remaining < 1 then
+									table.remove(room.entities, distantI)
+								else
+									if remaining == 1 then
+										if enteringCount == 1 then
+											distantName = enteringName
+										else
+											distantName = singularize(enteringName)
+										end
+									end
+									room.entities[distantI] = formatNumNpc(remaining, distantName)
+								end
+								changed = true
+								break
+							end
+						end
+					end
+				end
+			end
+		end
+		return changed
+	end)
+end
 function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
 		lastMDTPacket = dataStr
@@ -959,5 +1082,17 @@ function OnPluginDisable()  final() end
 
 	]]>
 </script>
-
+<triggers>
+    <trigger
+        name="triggerNPCEntered"
+		script="triggerNPCEntered"
+        enabled="y"
+        ignore_case="n"
+        keep_evaluating="y"
+        match="^(A |An |The )?(.*) (arrives?|enters?|trundles? in|hobbles? in) from the (north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
+        regexp="y"
+        repeat="n"
+        sequence="100"
+    ></trigger>
+</triggers>
 </muclient>
