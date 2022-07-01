@@ -730,6 +730,7 @@ function regexSplit(text, regularExpression)
 	end
 	return ret
 end
+
 -- cb is passed the MDTData and should return true if the display should be updated
 function editMDTData(cb)
 	if MDTIndicatorsEnabled and curMDTData ~= nil then
@@ -741,8 +742,10 @@ function editMDTData(cb)
 		end
 	end
 end
+
 local numStrToNum = { one = 1, two = 2, three = 3, four = 4, five = 5, six = 6, seven = 7, eight = 8, nine = 9, ten = 10, eleven = 11, twelve = 12, thirteen = 13, fourteen = 14 }
-function parseNumNpc (str)
+
+function parseNumNpc(str)
 	local count, name
 	local i = string.find(str, ' ')
 	if i then
@@ -762,16 +765,19 @@ function parseNumNpc (str)
 	end
 	return count, name
 end
-function formatNumNpc (count, str)
+
+function formatNumNpc(count, str)
 	if count == 1 then
 		return str
 	else
 		return count .. ' ' .. str
 	end
 end
+
 local pluralCache = {}
 local singularCache = {}
-function _pluralize (str)
+
+function _pluralize(str)
 	if str:match('[sxz]$') or str:match('[cs]h$') then
 		return str .. 'es'
 	elseif str:match('quy$') or str:match('[^aeiou]y$') then
@@ -780,7 +786,8 @@ function _pluralize (str)
 		return str .. 's'
 	end
 end
-function pluralize (str)
+
+function pluralize(str)
 	if not pluralCache[str] then
 		local plural = _pluralize(str)
 		pluralCache[str] = plural
@@ -788,12 +795,14 @@ function pluralize (str)
 	end
 	return pluralCache[str]
 end
+
 -- only called when if there are 3 or more and all but 1 enter at once
-function singularize (str)
+function singularize(str)
 	return singularCache[str] or string.sub(str, 1, -2)
 end
 
 local exitToMoves = { northeast = "1 ne", northwest = "1 nw", southeast = "1 se", southwest = "1 sw", north = "1 n", south = "1 s", east = "1 e", west = "1 w" }
+
 function triggerNPCEntered(name, line, wildcards)
 	local allEntering = wildcards[2]
 	local moves = exitToMoves[wildcards[4]]
@@ -837,6 +846,7 @@ function triggerNPCEntered(name, line, wildcards)
 		return changed
 	end)
 end
+
 function onGMCPReceived(message, dataStr)
 	if message == "room.writtenmap" then
 		lastMDTPacket = dataStr
