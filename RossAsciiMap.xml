@@ -774,10 +774,25 @@ function formatNumNpc(count, str)
 	end
 end
 
-local pluralCache = {}
-local singularCache = {}
+function invertKV(kv)
+	local ret = {}
+	for k, v in pairs(kv) do
+		ret[v] = k
+	end
+	return ret
+end
 
-function _pluralize(str)
+local pluralizeCache = {
+	man = "men",
+	fisherman = "fishermen",
+	woman = "women",
+	lady = "ladies",
+	sheep = "sheep",
+	grflx = "grflxen",
+}
+local singularizeCache = invertKV(pluralizeCache)
+
+function autopluralize(str)
 	if str:match('[sxz]$') or str:match('[cs]h$') then
 		return str .. 'es'
 	elseif str:match('quy$') or str:match('[^aeiou]y$') then
@@ -787,38 +802,50 @@ function _pluralize(str)
 	end
 end
 
-function pluralize(str)
-	if not pluralCache[str] then
-		local plural = _pluralize(str)
-		pluralCache[str] = plural
-		singularCache[plural] = str
+function pluralizeWord(word)
+	if not pluralizeCache[word] then
+		local plural = autopluralize(word)
+		pluralizeCache[word] = plural
+		singularizeCache[plural] = word
 	end
-	return pluralCache[str]
+	return pluralizeCache[word]
+end
+
+function pluralize(str)
+	local words = regexSplit(str, ' ')
+	words[#words] = pluralizeWord(words[#words])
+	return table.concat(words, ' ')
+end
+
+function singularizeWord(word)
+	return singularizeCache[word] or string.sub(word, 1, -2)
 end
 
 -- only called when if there are 3 or more and all but 1 enter at once
 function singularize(str)
-	return singularCache[str] or string.sub(str, 1, -2)
+	local words = regexSplit(str, ' ')
+	words[#words] = singularizeWord(words[#words])
+	return table.concat(words, ' ')
 end
 
 local exitToMoves = { northeast = "1 ne", northwest = "1 nw", southeast = "1 se", southwest = "1 sw", north = "1 n", south = "1 s", east = "1 e", west = "1 w" }
 
 function triggerNPCEntered(name, line, wildcards)
-	local allEntering = wildcards[2]
-	local moves = exitToMoves[wildcards[4]]
+	local allEntering = wildcards.npcs
+	local moves = exitToMoves[wildcards.exit]
 	editMDTData(function (data)
 		local changed = false
 		for roomI,room in ipairs(data) do
 			if room.entities ~= nil then
 				if #room.moves == 1 and room.moves[1] == moves then
-					for _, numEntering in ipairs(regexSplit(allEntering, "(, | and (?!yellow |white ))(an? )?")) do
-						local enteringCount, enteringName = parseNumNpc(numEntering)
+					for _, numNpc in ipairs(regexSplit(allEntering, "(, | and (?!yellow |white ))(an? )?")) do
+						local enteringCount, enteringName = parseNumNpc(numNpc)
 						local enteringPlural = enteringCount > 1
 						for distantI, distant in ipairs(room.entities) do
 							local distantCount, distantName = parseNumNpc(distant)
 							local distantPlural = distantCount > 1
 							local maybePluralEnteringName = enteringName
-							if enteringPlural ~= distantPlural then
+							if distantPlural and not enteringPlural then
 								maybePluralEnteringName = pluralize(enteringName)
 							end
 							if maybePluralEnteringName == distantName then
@@ -1094,12 +1121,11 @@ function OnPluginDisable()  final() end
 </script>
 <triggers>
     <trigger
-        name="triggerNPCEntered"
 		script="triggerNPCEntered"
         enabled="y"
         ignore_case="n"
         keep_evaluating="y"
-        match="^(A |An |The )?(.*) (arrives?|enters?|trundles? in|hobbles? in) from the (north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
+        match="^(\*thump\* \*click\* \*thump\* \*click\* )?([aA] |[aA]n |[tT]he )?(?P<npcs>.*) (arrives?|climbs?|enters?|hobbles?|rides?|squeezes?|swims?|trudges?|trundles?|wades?) (.* )?from (the )+(?P<exit>north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
         regexp="y"
         repeat="n"
         sequence="100"
