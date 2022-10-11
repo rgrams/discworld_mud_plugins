@@ -789,6 +789,7 @@ local pluralizeCache = {
 	lady = "ladies",
 	sheep = "sheep",
 	grflx = "grflxen",
+	child = "children",
 }
 local singularizeCache = invertKV(pluralizeCache)
 
@@ -1125,7 +1126,7 @@ function OnPluginDisable()  final() end
         enabled="y"
         ignore_case="n"
         keep_evaluating="y"
-        match="^(\*thump\* \*click\* \*thump\* \*click\* )?([aA] |[aA]n |[tT]he )?(?P<npcs>.*) (arrives?|climbs?|enters?|hobbles?|rides?|squeezes?|swims?|trudges?|trundles?|wades?) (.* )?from (the )+(?P<exit>north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
+        match="^(\*thump\* \*click\* \*thump\* \*click\* )?([aA] |[aA]n |[tT]he )?(?P<npcs>.*) (arrives?|climbs?|enters?|hobbles?|rides?|shambles?|shuffles?|squeezes?|swims?|trudges?|trundles?|wades?) (.* )?from (the )+(?P<exit>north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
         regexp="y"
         repeat="n"
         sequence="100"
