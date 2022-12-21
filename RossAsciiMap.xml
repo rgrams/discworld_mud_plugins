@@ -786,6 +786,7 @@ local pluralizeCache = {
 	man = "men",
 	fisherman = "fishermen",
 	woman = "women",
+	mercenary = "mercenaries",
 	lady = "ladies",
 	sheep = "sheep",
 	grflx = "grflxen",
