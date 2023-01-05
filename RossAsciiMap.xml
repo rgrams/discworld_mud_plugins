@@ -46,13 +46,11 @@ local SELF_ID = GetPluginID()
 local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
 local winID = SELF_ID .. "RossAsciiMap"
 
--- Get require path for modules - relative path from mushclient directory.
-local mushClientPath, pluginPath = GetInfo(66), GetPluginInfo(SELF_ID, 20)
-local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
+local rossPluginsDir = GetPluginInfo(SELF_ID, 20)
 
-local RGBToInt = require (requirePath .. "RGBToInt")
-local window = require (requirePath .. "window")
-local parseMDT = require(requirePath .. "MapDoorTextParser")
+local RGBToInt = dofile(rossPluginsDir .. "RGBToInt.lua")
+local window = dofile(rossPluginsDir .. "window.lua")
+local parseMDT = dofile(rossPluginsDir .. "MapDoorTextParser.lua")
 
 local function copy(t, out)
 	out = out or {}

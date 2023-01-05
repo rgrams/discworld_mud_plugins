@@ -6,8 +6,8 @@
 -- 	* Some wrapping for a window right-click menu.
 -- 		* Lock position and size menu option.
 
-local baseDir = (...):gsub('[^%.]+$', '')
-local RGBToInt = require (baseDir .. "RGBToInt")
+local rossPluginsDir = GetPluginInfo(GetPluginID(), 20);
+local RGBToInt = dofile(rossPluginsDir .. "RGBToInt.lua")
 local max, min = math.max, math.min
 
 local M = {}
