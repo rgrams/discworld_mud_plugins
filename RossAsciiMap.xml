@@ -1,44 +1,4 @@
-<?xml version="1.0" encoding="iso-8859-1"?>
-<!DOCTYPE muclient>
-
-<muclient>
-<plugin
-	 name="RossAsciiMap"
-	 author="Ross Grams"
-	 purpose="ASCII-map miniwindow"
-	 id="4045bd321bb34f7bc51a3ce8"
-	 language="Lua"
-	 save_state="y"
-	 date_written="2019-02-22 13:38:17"
-	 requires="5.05"
-	 version="2.0"
-	 >
-</plugin>
-
-<aliases>
-	<alias
-		match="^asciimap (enable|disable) (.+)$"
-		enabled="y"
-		regexp="y"
-		sequence="100"
-		script="aliasSetGroupsEnabled"
-		>
-	</alias>
-</aliases>
-
-<triggers>
-	<trigger
-		match="^asciimap (enable|disable) (.+)$"
-		enabled="y"
-		regexp="y"
-		sequence="100"
-		script="aliasSetGroupsEnabled"
-		>
-	</trigger>
-</triggers>
-
-<script>
-	<![CDATA[
+<?xml version="1.0" encoding="iso-8859-1"?><!DOCTYPE muclient><muclient><script><![CDATA[ -- this is all on the first line (including this comment) so that lua error messages will have correct line numbers
 
 require "json"
 
@@ -1119,6 +1079,43 @@ function OnPluginDisable()  final() end
 
 	]]>
 </script>
+
+
+<plugin
+	 name="RossAsciiMap"
+	 author="Ross Grams"
+	 purpose="ASCII-map miniwindow"
+	 id="4045bd321bb34f7bc51a3ce8"
+	 language="Lua"
+	 save_state="y"
+	 date_written="2019-02-22 13:38:17"
+	 requires="5.05"
+	 version="2.0"
+	 >
+</plugin>
+
+<aliases>
+	<alias
+		match="^asciimap (enable|disable) (.+)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="aliasSetGroupsEnabled"
+		>
+	</alias>
+</aliases>
+
+<triggers>
+	<trigger
+		match="^asciimap (enable|disable) (.+)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="aliasSetGroupsEnabled"
+		>
+	</trigger>
+</triggers>
+
 <triggers>
     <trigger
 		script="triggerNPCEntered"
