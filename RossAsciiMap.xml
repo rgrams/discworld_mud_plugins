@@ -1,44 +1,4 @@
-<?xml version="1.0" encoding="iso-8859-1"?>
-<!DOCTYPE muclient>
-
-<muclient>
-<plugin
-	 name="RossAsciiMap"
-	 author="Ross Grams"
-	 purpose="ASCII-map miniwindow"
-	 id="4045bd321bb34f7bc51a3ce8"
-	 language="Lua"
-	 save_state="y"
-	 date_written="2019-02-22 13:38:17"
-	 requires="5.05"
-	 version="2.0"
-	 >
-</plugin>
-
-<aliases>
-	<alias
-		match="^asciimap (enable|disable) (.+)$"
-		enabled="y"
-		regexp="y"
-		sequence="100"
-		script="aliasSetGroupsEnabled"
-		>
-	</alias>
-</aliases>
-
-<triggers>
-	<trigger
-		match="^asciimap (enable|disable) (.+)$"
-		enabled="y"
-		regexp="y"
-		sequence="100"
-		script="aliasSetGroupsEnabled"
-		>
-	</trigger>
-</triggers>
-
-<script>
-	<![CDATA[
+<?xml version="1.0" encoding="iso-8859-1"?><!DOCTYPE muclient><muclient><script><![CDATA[ -- this is all on the first line (including this comment) so that lua error messages will have correct line numbers
 
 require "json"
 
@@ -46,13 +6,11 @@ local SELF_ID = GetPluginID()
 local GMCP_INTERFACE_ID = "c190b5fc9e83b05d8de996c3"
 local winID = SELF_ID .. "RossAsciiMap"
 
--- Get require path for modules - relative path from mushclient directory.
-local mushClientPath, pluginPath = GetInfo(66), GetPluginInfo(SELF_ID, 20)
-local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
+local rossPluginsDir = GetPluginInfo(SELF_ID, 20)
 
-local RGBToInt = require (requirePath .. "RGBToInt")
-local window = require (requirePath .. "window")
-local parseMDT = require(requirePath .. "MapDoorTextParser")
+local RGBToInt = dofile(rossPluginsDir .. "RGBToInt.lua")
+local window = dofile(rossPluginsDir .. "window.lua")
+local parseMDT = dofile(rossPluginsDir .. "MapDoorTextParser.lua")
 
 local function copy(t, out)
 	out = out or {}
@@ -786,9 +744,11 @@ local pluralizeCache = {
 	man = "men",
 	fisherman = "fishermen",
 	woman = "women",
+	mercenary = "mercenaries",
 	lady = "ladies",
 	sheep = "sheep",
 	grflx = "grflxen",
+	child = "children",
 }
 local singularizeCache = invertKV(pluralizeCache)
 
@@ -1119,13 +1079,50 @@ function OnPluginDisable()  final() end
 
 	]]>
 </script>
+
+
+<plugin
+	 name="RossAsciiMap"
+	 author="Ross Grams"
+	 purpose="ASCII-map miniwindow"
+	 id="4045bd321bb34f7bc51a3ce8"
+	 language="Lua"
+	 save_state="y"
+	 date_written="2019-02-22 13:38:17"
+	 requires="5.05"
+	 version="2.0"
+	 >
+</plugin>
+
+<aliases>
+	<alias
+		match="^asciimap (enable|disable) (.+)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="aliasSetGroupsEnabled"
+		>
+	</alias>
+</aliases>
+
+<triggers>
+	<trigger
+		match="^asciimap (enable|disable) (.+)$"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="aliasSetGroupsEnabled"
+		>
+	</trigger>
+</triggers>
+
 <triggers>
     <trigger
 		script="triggerNPCEntered"
         enabled="y"
         ignore_case="n"
         keep_evaluating="y"
-        match="^(\*thump\* \*click\* \*thump\* \*click\* )?([aA] |[aA]n |[tT]he )?(?P<npcs>.*) (arrives?|climbs?|enters?|hobbles?|rides?|squeezes?|swims?|trudges?|trundles?|wades?) (.* )?from (the )+(?P<exit>north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
+        match="^(\*thump\* \*click\* \*thump\* \*click\* )?([aA] |[aA]n |[tT]he )?(?P<npcs>.*) (arrives?|climbs?|enters?|hobbles?|rides?|shambles?|shuffles?|squeezes?|swims?|trudges?|trundles?|wades?) (.* )?from (the )+(?P<exit>north|northeast|east|southeast|south|southwest|west|northwest)[.]$"
         regexp="y"
         repeat="n"
         sequence="100"

@@ -104,11 +104,9 @@ local helpDefaultFGColor = "#ababab"
 --------------------------------------------------
 local SELF_ID = GetPluginID()
 
--- Get require path for modules - relative path from mushclient directory.
-local mushClientPath, pluginPath = GetInfo(66), GetPluginInfo(SELF_ID, 20)
-local requirePath = pluginPath:gsub(mushClientPath, ""):gsub("\\", ".")
+local rossPluginsDir = GetPluginInfo(SELF_ID, 20)
+local mapsByID = dofile(rossPluginsDir .. "quowMapsByID.lua")
 
-local mapsByID = require(requirePath .. "quowMapsByID")
 local quowMapPluginID = "bfe35205f026786ea1d56e3b"
 local aliases = {
 	rewriteList = [[^%s relist$]],
